@@ -25,15 +25,25 @@ E.g. when creating a new tile, you could make room for it by:
 ### Automatically Computing AABBs
 Automatically determining appropriate AABBs for most actions is straightforward.
 
-Suppose we want to resize a tile vertically. In general, there only 3 possibilities when looking for a suitable AABB:
-1. There exists a column of tiles which can be drawn in parallel to the sides of the target window, and is *clean*
+Suppose we want to resize a tile by moving it's northern side vertically. In general, there 4 possibilities when looking for a suitable AABB:
+1. There exists a column of tiles which can be drawn in parallel to the sides of the target window, extending in the target direction (north), and is *clean*.
    - *Clean*, as in: it includes at least one other tile and does not cut through the interior of any tiles.
    - In which case, that *clean* column is a suitable AABB.
-2. The target tile borders multiple tiles. These tiles would necessarily be dragged along with the target tile, so we can look for a wider column parallel to outer sides of those adjacent tiles.
-   - Rinse and repeat until a *clean* column is found. 
-3. Otherwise, the target tile already occupies all of the available vertical space, so there is nothing to.
+2. The target tile borders multiple tiles on the northern side. These tiles would necessarily be dragged along with the target tile, so we can look for a wider column parallel to outer sides of those adjacent tiles.
+   - Equally, any tiles bordering the southern side of the aforementioned neighbours so be included. This continues until a *clean* column is found. 
+3. The target tile already occupies all of the available vertical space, so there is nothing to.
+4. The tile has neighbours which could make room, but they do not form a *clean* column (pathological cases).
 
-The above logic applies equally to rows and columns, and accounts for all actions involving resizing or creating new windows.
+The above logic applies equally to rows and columns, and accounts for most cases when creating, destroying, or resizing tiles. The fourth, pathological case, is discussed in the next section.
+
+### Pathological Cases
+Whilst most layouts form grids, it is possible to create pathological layouts in which space is available, but a row/column cannot be formed without cutting through the interior of one or more tiles.
+
+These situations are managed by selecting a prospective AABB that would cut through tiles, and then temporarily adjusting the overhanging tiles to fit them into the AABB. Temporary tiles are created to reserve the overhanging space, which is returned to the affected tiles after the desired adjustments are completed. The exact nature of these artificial adjustments will depend on the needs of the case.
+
+A straightforward example of this is the special case in which the adjacent tiles in all four directions lie across the corners of the target tile in a circular fashion. 
+
+When deleting a tile, for example, it is generally preferable to fill the space with an existing row or column if any is available. In the situation described above however, all four row/column candidates would cut through at least one neighbour and would also be asymmetrical. Unless a direction in which to donate the space has been specified, the fairest option would be to re-arrange the surrounding tiles into a grid split down the center of the deleted tile, such that tiles furthest to each corner of the grid make up the corresponding quadrant. This is achieved by creating four artificial tiles such that each artificial tile starts flush with a of the deleted target. The target tile can now be deleted donating the space to any one of the four artificial tiles. The unchanged artificial tiles along the same axis donates its space to the larger artificial first. Then, the cross-axis artificial tiles are removed, followed by the remaining artificial tile, such that a grid is formed.
 
 ### Deleting Tiles
 In most cases, deleting a tile can be done trivially along one axis or the other and the surrounding tiles will become larger as one would expect. However, there exists a special case in which the adjacent tiles in all four directions prevent each other from closing the gap created in a circular fashion. In this situation, the surrounding tiles are re-arranged form a grid split down the center of the deleted tile, such that: tiles furthest to each corner of the grid make up the corresponding quadrant.
@@ -84,6 +94,7 @@ Here are some common concepts and features that, whilst useful to end users, are
 - Formally document tag syntax.
 - Interprocess Communication
 - Improved examples/documentation.
+- Add explanations for all pathological cases.
 
 [awesome]: https://awesomewm.org
 [bspwm]: https://github.com/baskerville/bspwm
