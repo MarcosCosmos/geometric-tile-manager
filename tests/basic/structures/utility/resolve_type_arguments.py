@@ -8,6 +8,7 @@ class MyTestCase:
     def test_something(self):
 
         #todo: convert this into actual unit tests with asserts instead of printouts, split up cases.
+        
         T = TypeVar('T')
         U = TypeVar('U')
         Q = TypeVar('Q')
@@ -20,32 +21,32 @@ class MyTestCase:
 
         class A(Generic[T, U, Q, R]):
             ...
-
         class NestedA(Generic[T, U, Q]):
             ...
-
         class NestedB(Generic[T]):
             ...
-
         class NoParams:
             ...
-
         class B(NoParams, NestedA[U, Q, U], A[int, NestedA[Q, Q, Q], Q, U], NestedB[R]):
             ...
-
         class C(B[T, str, int]):
             ...
-
         class D(C[int]):
             ...
-
         class E(D):
             ...
-
         class F(E):
             ...
+        class G(Generic[T]):
+            ...
+        class H(Generic[T]):
+            ...
+        class I(G[int]):
+            ...
+        class J(I, H[str]):
+            ...
 
-        my_types = (A, B, C, D, E, F)
+        my_types = (A, B, C, D, E, F, G, H, I, J)
         fill_vars = [W, X, Y, Z]
 
         max_len = 0

@@ -69,7 +69,7 @@ class EnumDataclassBase(Generic[DCEnumT, T]):
     @classmethod
     def _make(cls, *args, **kwargs):
         return cls(*args)
-    @_make.register(dict[DCEnumT, T])
+    @_make.register(dict)
     @classmethod
     def _make(cls, data: dict[DCEnumT, T]):
         return cls(**{
@@ -241,7 +241,7 @@ def resolve_type_arguments(query_type: Type, target_type: Union[Type, GenericAli
     target_origin = get_origin(target_type)
     if target_origin is None:
         if target_type is query_type:
-            return ()
+            return target_type.__parameters__
         else:
             target_origin = target_type
             supplied_args = None
@@ -266,6 +266,8 @@ def resolve_type_arguments(query_type: Type, target_type: Union[Type, GenericAli
                     return resolve_type_arguments(query_type, each_base[resolved_args]) #each_base[args] fowards the args to each_base, it is not quite equivalent to GenericAlias(each_origin, resolved_args)
                 else:
                     return resolve_type_arguments(query_type, each_base)
+        elif issubclass(each_base, query_type):
+            return resolve_type_arguments(query_type, each_base)
     if not issubclass(target_origin, query_type):
         raise ValueError(f'{target_type} is not a subclass of {query_type}')
     else:
