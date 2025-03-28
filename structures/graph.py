@@ -14,7 +14,7 @@ import parse as ps
 from typing import NewType, Sequence, Final, Optional, Iterator, Iterable, MutableSequence, TypeVar, Generic, \
     NamedTuple, overload, Type, Mapping, ClassVar, get_args, get_origin
 
-from structures.geometry import *
+from structures.geomtry.geometry import *
 
 T = TypeVar('T')
 

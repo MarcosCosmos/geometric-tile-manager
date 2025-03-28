@@ -11,23 +11,10 @@ from types import GenericAlias
 from typing import *
 import inspect
 
-from structures.utility import resolve_type_arguments, DataclassEnum, EnumDataclassBase, DCEnumT, enum_dataclass
+from structures.geomtry.OrientationEnum import OrientationEnum
+from structures.utility.utility import resolve_type_arguments, EnumDataclass, DCEnumT, enum_dataclass
 
 T = TypeVar('T')
-
-class OrientationEnum(DataclassEnum):
-    """
-    Base class for utility enums relating to directions or axes.
-
-     __str__ and __repr__ representations are simplified, since this is only intended for unique enums and this makes for easier debugging for the most part.
-    """
-
-    def __str__(self) -> str:
-        return self.snake_case_name
-
-    def __repr__(self):
-        return f'<{self.__class__.__name__}.{self.name}>'
-
 
 class Axis(OrientationEnum):
     @property
@@ -43,7 +30,7 @@ class Axis(OrientationEnum):
     HORIZONTAL = False
     VERTICAL = True
 
-class AxisDataclass(EnumDataclassBase[Axis, T]):
+class AxisDataclass(EnumDataclass[Axis, T]):
     ...
 
 class Direction(OrientationEnum):
@@ -173,10 +160,10 @@ class DiagonalDirection(DiagonalValue, Direction):
         return cls(DiagonalValue._make(*args, **kwargs))
 
 #not creating a whole stub file just for these three hints right now.
-class CardinalDataclass(EnumDataclassBase[CardinalDirection, T]):
+class CardinalDataclass(EnumDataclass[CardinalDirection, T]):
     ...
 
-class DiagonalDataclass(EnumDataclassBase[DiagonalDirection, T]):
+class DiagonalDataclass(EnumDataclass[DiagonalDirection, T]):
     ...
 
 #polutes the namespace because these really should be explicitly reserved words throughout this project
@@ -193,7 +180,7 @@ SOUTH_WEST = DiagonalDirection.SOUTH_WEST
 
 if TYPE_CHECKING:
     @type_check_only
-    class AxisDataclass(EnumDataclassBase[Axis, T]):
+    class AxisDataclass(EnumDataclass[Axis, T]):
         """
         Note: these member annotations exist for linting/autocomplete but are not used at runtime, since the dataclass fields come directly from the enum itself.
         The real class is otherwise identical.
@@ -202,7 +189,7 @@ if TYPE_CHECKING:
         vertical: T
 
     @type_check_only
-    class CardinalDataclass(EnumDataclassBase[CardinalDirection, T]):
+    class CardinalDataclass(EnumDataclass[CardinalDirection, T]):
         """
         Note: these member annotations exist for user linting/autocomplete but are not used at runtime, since the real dataclass fields come directly from the enum itself.
         The real class is otherwise identical.
@@ -213,7 +200,7 @@ if TYPE_CHECKING:
         west: T
 
     @type_check_only
-    class DiagonalDataclass(EnumDataclassBase[DiagonalDirection, T]):
+    class DiagonalDataclass(EnumDataclass[DiagonalDirection, T]):
         """
         Note: these member annotations exist for user linting/autocomplete but are not used at runtime, since the dataclass fields come directly from the enum itself.
         The real class is otherwise identical.

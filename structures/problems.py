@@ -2,7 +2,7 @@ from abc import abstractmethod, ABC
 
 from structures.graph import Box, Edge, Tile, Window, Vertex
 
-from structures.geometry import Axis, CardinalDirection, Direction
+from structures.geomtry.geometry import Axis, CardinalDirection, Direction
 
 
 class StateProblem(ABC):

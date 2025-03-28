@@ -3,7 +3,7 @@ import unittest
 from procedures.manipulation import establish_connections_along_injection_axis, repair_connections_along_perpendicular_axis
 from structures.graph import Edge, Vertex, Window, Wall
 from structures.manager import GeometricTileManager
-from structures.geometry import *
+from structures.geomtry.geometry import *
 
 
 class MyTestCase(unittest.TestCase):

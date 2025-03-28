@@ -2,7 +2,7 @@ from display.demo.graph_renderer import render_state
 from procedures.manipulation import fill_wall_with_new_window, split_window_with_new_window
 from structures.graph import Wall, TileId, Window, Edge, Tag, TileTag
 from structures.manager import GeometricTileManager
-from structures.geometry import *
+from structures.geomtry.geometry import *
 
 
 def basic_window_splitting_test():

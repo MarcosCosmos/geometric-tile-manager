@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import Tk, Canvas
 from structures.manager import GeometricTileManager
-from structures.geometry import Vector, Axis
+from structures.geomtry.geometry import Vector, Axis
 from structures.graph import Wall, Window
 
 
