@@ -2,7 +2,7 @@ from typing import Final, MutableSequence, Sequence
 
 from procedures.examination import are_aligned, covers_contents
 from structures.graph import Box, Vertex, Edge, IndependantBox
-from structures.geomtry.geometry import Axis
+from structures.geomtry.Axis import Axis
 
 
 class Segment:

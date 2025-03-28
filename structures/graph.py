@@ -14,7 +14,11 @@ import parse as ps
 from typing import NewType, Sequence, Final, Optional, Iterator, Iterable, MutableSequence, TypeVar, Generic, \
     NamedTuple, overload, Type, Mapping, ClassVar, get_args, get_origin
 
-from structures.geomtry.geometry import *
+from structures.geomtry.Axis import Axis
+from structures.geomtry.CardinalDirection import CardinalDirection
+from structures.geomtry.DiagonalDirection import DiagonalDirection
+from structures.geomtry.Vector import Vector
+from structures.geomtry.DiagonaDataclass import *
 
 T = TypeVar('T')
 

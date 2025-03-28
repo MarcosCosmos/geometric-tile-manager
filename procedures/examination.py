@@ -2,10 +2,12 @@ from abc import abstractmethod
 from functools import singledispatch
 from typing import Sequence
 
+from structures.geomtry.Axis import Axis
+from structures.geomtry.CardinalDirection import CardinalDirection
 from structures.graph import Tile, Edge, Box, Window, Vertex
 from structures.problems import NotAxisAlignedProblem, OutOfOrderProblem, StateProblem, \
     BrokenEdgeProblem, NeighbourAbsenceProblem
-from structures.geomtry.geometry import CardinalDirection, Axis, DiagonalDirection
+from structures.geomtry.DiagonalDirection import DiagonalDirection
 
 
 def is_divided(target: Tile) -> bool:

@@ -1,7 +1,8 @@
 from typing import Optional
 
 from procedures.examination import is_divided
-from structures.graph import Tile, CardinalDirection, Wall
+from structures.geomtry.CardinalDirection import CardinalDirection
+from structures.graph import Tile, Wall
 from structures.manager import GeometricTileManager
 from structures.navigation import InteriorWallNeighbourhood
 

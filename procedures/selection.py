@@ -1,7 +1,7 @@
 from typing import Optional, Sequence
 
 from procedures.examination import validate, are_aligned
-from structures.geomtry.geometry import CardinalDirection
+from structures.geomtry.CardinalDirection import CardinalDirection
 from structures.graph import Edge, Vertex
 
 """

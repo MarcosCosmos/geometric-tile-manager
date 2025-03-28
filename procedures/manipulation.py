@@ -1,10 +1,12 @@
 from typing import Sequence, Optional
 
 from procedures.examination import is_divided, are_aligned, covers_contents, validate
+from structures.geomtry.Axis import Axis
+from structures.geomtry.Vector import Vector
 from structures.graph import Wall, Window, Edge, Vertex, Box
 from structures.manager import GeometricTileManager
 from structures.problems import BoxTooSmallForMarginsProblem, StateProblem
-from structures.geomtry.geometry import Vector, CardinalDirection, Axis
+from structures.geomtry.CardinalDirection import CardinalDirection
 
 def establish_connections_along_injection_axis(target: Window, parallel_axis: Axis, neighbours_negative: tuple[Sequence[Vertex], Sequence[Vertex]], neighbours_positive: tuple[Sequence[Vertex], Sequence[Vertex]]):
     """

@@ -3,7 +3,7 @@ from procedures.manipulation import fill_wall_with_new_window
 from structures.graph import Window, Wall
 from structures.manager import GeometricTileManager
 
-from structures.geomtry.geometry import Vector
+from structures.geomtry.Vector import Vector
 
 
 def basic_wall_and_window_rendering_test():

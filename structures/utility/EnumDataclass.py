@@ -1,12 +1,13 @@
 #todo: possibly look into leveraging the performance of slots whilst still allowing enum-keyed lookup. E.g. with a tuple we can store an index on the enum member, unsure how to leverage that in a dataclass at this stage.
 
-from structures.utility import DataEnum
+from structures.utility import DataEnum, resolve_type_arguments
 
 import dataclasses
 from functools import singledispatchmethod
-from typing import Generic, TypeVar
+from typing import Generic, Type, TypeVar, no_type_check_decorator
 
 T = TypeVar('T')
+VT = TypeVar('VT')
 DCEnumT = TypeVar('DCEnumT', bound=DataEnum)
 
 class EnumDataclass(Generic[DCEnumT, T]):
@@ -22,7 +23,7 @@ class EnumDataclass(Generic[DCEnumT, T]):
             for (key, value) in data.items()
         })
 
-    def _replace(instance, data: dict[DCEnumT, VT]) -> EnumDataclass[DCEnumT]:
+    def _replace(instance, data: dict[DCEnumT, VT]) -> 'EnumDataclass'[DCEnumT, T]:
         """
         Like dataclasses.replace, but keyed using enum members.
         Effectively sugar that calls dataclasses.replace with each key swapped for key.snake_case_name to allow them to be used as **kwargs without the boilerplate of accessing key.snake_case_name each time.

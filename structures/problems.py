@@ -1,8 +1,10 @@
 from abc import abstractmethod, ABC
 
+from structures.geomtry.Axis import Axis
+from structures.geomtry.CardinalDirection import CardinalDirection
 from structures.graph import Box, Edge, Tile, Window, Vertex
 
-from structures.geomtry.geometry import Axis, CardinalDirection, Direction
+from structures.geomtry.Direction import Direction
 
 
 class StateProblem(ABC):

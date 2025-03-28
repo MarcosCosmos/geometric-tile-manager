@@ -2,9 +2,12 @@ import unittest
 
 from procedures.examination import is_divided
 from procedures.manipulation import establish_connections_along_injection_axis
+from structures.geomtry.Axis import Axis
+from structures.geomtry.DiagonalDirection import DiagonalDirection
+from structures.geomtry.Vector import Vector
 from structures.graph import Window
 from structures.manager import GeometricTileManager
-from structures.geomtry.geometry import *
+from structures.geomtry.DiagonaDataclass import *
 
 class Cases(unittest.TestCase):
     def test_single_row_of_flush_windows(self):

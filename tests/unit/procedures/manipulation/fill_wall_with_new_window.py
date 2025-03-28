@@ -1,9 +1,11 @@
 import unittest
 
 from procedures.manipulation import fill_wall_with_new_window
+from structures.geomtry.CardinalDirection import CardinalDirection
+from structures.geomtry.Vector import Vector
 from structures.graph import Wall
 from structures.manager import GeometricTileManager
-from structures.geomtry.geometry import Vector, DiagonalDirection, CardinalDirection
+from structures.geomtry.DiagonalDirection import DiagonalDirection
 
 
 class MyTestCase(unittest.TestCase):
