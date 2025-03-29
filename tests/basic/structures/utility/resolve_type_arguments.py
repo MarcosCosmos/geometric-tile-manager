@@ -1,7 +1,7 @@
 from types import GenericAlias
 from typing import TypeVar, Generic
 
-from structures.utility.resolve_type_arguments import resolve_type_arguments
+from utility.resolve_type_arguments import resolve_type_arguments
 
 
 class MyTestCase:

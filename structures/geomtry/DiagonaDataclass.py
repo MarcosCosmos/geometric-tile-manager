@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, TypeVar, type_check_only
 
 from structures.geomtry.DiagonalDirection import DiagonalDirection
-from structures.utility import EnumDataclass
+from utility import EnumDataclass
 
 T = TypeVar('T')
 

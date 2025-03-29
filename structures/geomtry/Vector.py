@@ -1,5 +1,5 @@
 from structures.geomtry import AxisDataclass
-from structures.utility import enum_dataclass
+from utility import enum_dataclass
 
 
 import operator

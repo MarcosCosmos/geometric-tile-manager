@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, TypeVar, type_check_only
 
 from structures.geomtry import CardinalDirection
-from structures.utility import EnumDataclass
+from utility import EnumDataclass
 
 
 T = TypeVar('T')

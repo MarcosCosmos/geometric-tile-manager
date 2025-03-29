@@ -1,6 +1,6 @@
 #todo: possibly look into leveraging the performance of slots whilst still allowing enum-keyed lookup. E.g. with a tuple we can store an index on the enum member, unsure how to leverage that in a dataclass at this stage.
 
-from structures.utility import DataEnum, resolve_type_arguments
+from utility import DataEnum, resolve_type_arguments
 
 import dataclasses
 from functools import singledispatchmethod

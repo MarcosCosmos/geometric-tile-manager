@@ -1,7 +1,7 @@
 
 from typing import TYPE_CHECKING, TypeVar, type_check_only
 from structures.geomtry import Axis
-from structures.utility import EnumDataclass
+from utility import EnumDataclass
 
 T = TypeVar('T')
 class AxisDataclass(EnumDataclass[Axis, T]):

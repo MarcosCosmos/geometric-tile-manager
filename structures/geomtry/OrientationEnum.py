@@ -1,4 +1,4 @@
-from structures.utility import DataEnum
+from utility import DataEnum
 
 class OrientationEnum(DataEnum):
     """
