@@ -1,14 +1,15 @@
 from functools import cache
-from typing import TYPE_CHECKING, TypeVar, type_check_only, Final, NamedTuple
+from typing import TYPE_CHECKING, TypeVar, Final, NamedTuple
 
 from geometry.axis import Axis
-from geometry.direction.diagonal import DiagonalDirection
 from geometry.direction import Direction
 from geometry.vector import Vector
-from utility import EnumDataclass
+from utility.enum_data import EnumDataclass
+
+if TYPE_CHECKING:
+    from geometry.direction.diagonal import DiagonalDirection
 
 T = TypeVar('T')
-
 
 class CardinalValue(NamedTuple):
     """
@@ -44,7 +45,8 @@ class CardinalDirection(CardinalValue, Direction):
 
     @property
     @cache
-    def diagonals(self) -> tuple[DiagonalDirection, DiagonalDirection]:
+    def diagonals(self) -> tuple['DiagonalDirection', 'DiagonalDirection']:
+        from geometry.direction.diagonal import DiagonalDirection
         return tuple(
             DiagonalDirection._make({self.axis: self,self.axis.perpendicular: other})
             for other in self.axis.perpendicular.directions
@@ -69,6 +71,7 @@ class CardinalDataclass(EnumDataclass[CardinalDirection, T]):
 
 
 if TYPE_CHECKING:
+    from typing import type_check_only
     @type_check_only
     class CardinalDataclass(EnumDataclass[CardinalDirection, T]):
         """

@@ -1,9 +1,11 @@
 from functools import cache
-from typing import TYPE_CHECKING, TypeVar, type_check_only
+from typing import TYPE_CHECKING, TypeVar
 
-from geometry.direction.cardinal import CardinalDirection
 from geometry.orientation import Orientation
-from utility import EnumDataclass
+from utility.enum_data import EnumDataclass
+
+if TYPE_CHECKING:
+    from geometry.direction.cardinal import CardinalDirection
 
 T = TypeVar('T')
 
@@ -15,8 +17,9 @@ class Axis(Orientation):
 
     @property
     @cache
-    def directions(self) -> tuple[CardinalDirection, CardinalDirection]:
-        return (CardinalDirection((self, False)), CardinalDirection((self, True)))
+    def directions(self) -> tuple['CardinalDirection', 'CardinalDirection']:
+        from geometry.direction.cardinal import CardinalDirection
+        return CardinalDirection((self, False)), CardinalDirection((self, True))
 
     HORIZONTAL = False
     VERTICAL = True
@@ -25,6 +28,7 @@ class AxisDataclass(EnumDataclass[Axis, T]):
     ...
 
 if TYPE_CHECKING:
+    from typing import type_check_only
     @type_check_only
     class AxisDataclass(EnumDataclass[Axis, T]):
         """

@@ -1,4 +1,7 @@
 from display.demo.graph_renderer import render_state
+from geometry.graph.canvas import Canvas
+from geometry.graph.tag import Tag
+from geometry.vector import Vector
 from procedures.manipulation import fill_canvas_with_new_window, split_window_with_new_window
 from geometry.direction.constants import *
 from manager import GeometricTileManager
@@ -42,11 +45,10 @@ def basic_window_splitting_test():
 
     #todo: move tag lookup tests to unit tests
 
-    print(geometry.graph.helpers.parse_tag(str(first_window.generate_tag())))
+    print(Tag.parse(str(first_window.generate_tag())))
     print(second_window.generate_tag())
-    print(
-        geometry.graph.helpers.parse_tag(str(gtmInstance.graph[second_window.sides[EAST].generate_tag()].generate_tag())))
-    print(geometry.graph.helpers.parse_tag(str(gtmInstance.graph[second_window.corners.north_west.generate_tag()].generate_tag())))
+    print(Tag.parse(str(gtmInstance.graph[second_window.sides[EAST].generate_tag()].generate_tag())))
+    print(Tag.parse(str(gtmInstance.graph[second_window.corners.north_west.generate_tag()].generate_tag())))
 
     #todo: write up automated unit test version.. will use an auto-generated set of splits
     test = gtmInstance.graph[first_window.generate_tag()]

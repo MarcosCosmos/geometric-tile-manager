@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from geometry.graph.tag import Tag
 from geometry.graph.tile import Tile, TileTag
 
@@ -11,9 +13,11 @@ class Window(Tile):
         However, for now such ideas are out of scope.
     """
 
-    def generate_tag(self) -> WindowTag:
+    def generate_tag(self) -> 'WindowTag':
         return WindowTag(self._name if self._name is not None else self.id)
 
 
 class WindowTag(TileTag, Tag[Window]):
     ...
+
+WindowTag.Element = Window

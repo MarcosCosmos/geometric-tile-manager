@@ -1,13 +1,24 @@
-#todo: possibly look into leveraging the performance of slots whilst still allowing enum-keyed lookup. E.g. with a tuple we can store an index on the enum member, unsure how to leverage that in a dataclass at this stage.
-
 import dataclasses
+from enum import Enum
 from functools import singledispatchmethod
-from typing import Generic, Type, TypeVar, no_type_check_decorator
+from typing import Final, Generic, no_type_check_decorator, Type, TypeVar
 
-from utility import DataEnum, resolve_type_arguments
+from utility.helpers import resolve_type_arguments
+
 
 T = TypeVar('T')
 VT = TypeVar('VT')
+
+class DataEnum(Enum):
+    """
+    provides a snake_case_name member string for each enum member, which is more suitable for member names in corresponding dataclasses.
+    """
+
+    snake_case_name: Final[str]
+
+    def __init__(self, *args):
+        self.snake_case_name = self.name.lower()
+
 DCEnumT = TypeVar('DCEnumT', bound=DataEnum)
 
 class EnumDataclass(Generic[DCEnumT, T]):
@@ -46,7 +57,8 @@ class EnumDataclass(Generic[DCEnumT, T]):
 
     def __iter__(self):
         return iter(map(lambda x: getattr(self, x.name), dataclasses.fields(self)))
-    
+
+
 @no_type_check_decorator
 def enum_dataclass(cls=None, /, **kwargs):
     """

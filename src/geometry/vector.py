@@ -2,7 +2,7 @@ import operator
 from typing import Callable, TypeVar
 
 from geometry.axis import AxisDataclass
-from utility import enum_dataclass
+from utility.enum_data import enum_dataclass
 
 T = TypeVar('T')
 
@@ -16,17 +16,17 @@ class Vector(AxisDataclass[T]):
     def debug_string(self) -> str:
         return f'({self.horizontal},{self.vertical})'
 
-    def __op(self, other: 'Vector'[T], op: Callable[['Vector'[T], 'Vector'[T]], 'Vector'[T]]):
+    def __op(self, other: 'Vector[T]', op: Callable[['Vector[T]', 'Vector[T]'], 'Vector[T]']):
         return Vector(*tuple(op(*each) for each in zip(self, other)))
 
-    def __add__(self, other: 'Vector'[T]):
+    def __add__(self, other: 'Vector[T]'):
         return self.__op(other, operator.add)
 
-    def __sub__(self, other: 'Vector'[T]) -> 'Vector'[T]:
+    def __sub__(self, other: 'Vector[T]') -> 'Vector[T]':
         return self.__op(other, operator.sub)
 
-    def __matmul__(self, other: 'Vector'[T]) -> 'Vector'[T]:
+    def __matmul__(self, other: 'Vector[T]') -> 'Vector[T]':
         return self.__op(other, operator.mul)
 
-    def __mul__(self, scale: T) -> 'Vector'[T]:
+    def __mul__(self, scale: T) -> 'Vector[T]':
         return Vector(*tuple(each * scale for each in self))

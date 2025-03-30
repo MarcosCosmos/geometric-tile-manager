@@ -1,7 +1,10 @@
 import tkinter as tk
-from tkinter import Tk, Canvas
+from tkinter import Tk
+from tkinter import Canvas as tCanvas
 
 from geometry.axis import Axis
+from geometry.graph.canvas import Canvas
+from geometry.graph.window import Window
 from geometry.vector import Vector
 from manager import GeometricTileManager
 
@@ -14,7 +17,7 @@ def render_state(target: GeometricTileManager, canvasSize: Vector[int], show_lin
     """
     root = Tk()
 
-    theCanvas = Canvas(root, bg="white", height=canvasSize.vertical, width=canvasSize.horizontal)
+    theCanvas = tCanvas(root, bg="white", height=canvasSize.vertical, width=canvasSize.horizontal)
 
     for each_canvas in target.graph.by_type[Canvas].values():
         theCanvas.create_rectangle(

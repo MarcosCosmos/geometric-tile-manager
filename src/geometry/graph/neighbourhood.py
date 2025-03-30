@@ -2,13 +2,10 @@ from __future__ import annotations
 
 from typing import ClassVar, Sequence, Final, MutableSequence
 
-from structures.navigation import TileNeighbourhood
-
-from procedures.examination import is_divided
 from geometry.direction.cardinal import CardinalDataclass, CardinalDirection
 from geometry.graph.canvas import Canvas
 from geometry.graph.tile import Tile
-from utility import enum_dataclass
+from utility.enum_data import enum_dataclass
 
 
 @enum_dataclass
@@ -87,6 +84,7 @@ class InteriorCanvasNeighbourhood(TileNeighbourhood):
         super().__init__(owner)
 
     def __getitem__(self, side: CardinalDirection) -> Sequence[Tile]:
+        from procedures.examination import is_divided
         """
         Finds the tiles associated with the vertices adjacent to nodes within the axis-aligned range defined by a side's edge. This automatically captures any tiles which happen to straddle a corner since at least one of the vertices would have to be within that range regardless.
         :param sideName:
@@ -115,19 +113,19 @@ class InteriorCanvasNeighbourhood(TileNeighbourhood):
 
     @property
     def north(self) -> Sequence[Tile]:
-        return self._computeSide(CardinalDirection.NORTH)
+        return self.__getitem__(CardinalDirection.NORTH)
 
     @property
     def east(self) -> Sequence[Tile]:
-        return self._computeSide(CardinalDirection.EAST)
+        return self.__getitem__(CardinalDirection.EAST)
 
     @property
     def south(self) -> Sequence[Tile]:
-        return self._computeSide(CardinalDirection.SOUTH)
+        return self.__getitem__(CardinalDirection.SOUTH)
 
     @property
     def west(self) -> Sequence[Tile]:
-        return self._computeSide(CardinalDirection.WEST)
+        return self.__getitem__(CardinalDirection.WEST)
 
 
 class NarrowTileNeighbourhood(ExteriorTileNeighbourhood):

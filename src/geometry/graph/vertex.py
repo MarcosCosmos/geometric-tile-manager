@@ -1,12 +1,16 @@
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, TYPE_CHECKING
 
 from geometry.direction.diagonal import DiagonalDirection
 from geometry.vector import Vector
 from geometry.graph.helpers import parse_tag
-from geometry.graph.neighbourhood import VertexNeighbourhood
 from geometry.graph.tag import TaggableElement, Tag
-from geometry.graph.tile import Tile, TileTag
+
+
+if TYPE_CHECKING:
+    from geometry.graph.tile import Tile, TileTag
+    from geometry.graph.neighbourhood import VertexNeighbourhood
+
 
 
 class Vertex(TaggableElement):
@@ -22,12 +26,13 @@ class Vertex(TaggableElement):
 
 
 
-    owner: Final[Tile]
+    owner: Final['Tile']
     role: Final[DiagonalDirection]
     location: Vector[int] #not optional, so Windows should only be created via algorithms - canvass could possibly simulate free floating layers? or an extension of canvass.
-    neighbours: Final[VertexNeighbourhood]
+    neighbours: Final['VertexNeighbourhood']
 
-    def __init__(self, location: Vector[int], owner: Tile, role: DiagonalDirection):
+    def __init__(self, location: Vector[int], owner: 'Tile', role: DiagonalDirection):
+        from geometry.graph.neighbourhood import VertexNeighbourhood
         self.owner = owner
         self.role = role
         self.location = location
@@ -48,10 +53,11 @@ class Vertex(TaggableElement):
 @dataclass
 class VertexTag(Tag[Vertex]):
     format='{self.owner.inner_str}.{self.role.snake_case_name}'
-    owner: TileTag
+    owner: 'TileTag'
     role: DiagonalDirection
 
     @staticmethod
     def parse(text: str) -> 'VertexTag':
+        from geometry.graph.tile import TileTag
         owner, role = parse_tag(VertexTag.format, text)
-        return VertexTag(TileTag.parse(owner), DiagonalDirection.__getitem__[role.upper()])
+        return VertexTag(TileTag.parse(owner), DiagonalDirection[role.upper()])

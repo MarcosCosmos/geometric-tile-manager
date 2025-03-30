@@ -1,8 +1,13 @@
 import unittest
 
+from geometry.direction.cardinal import CardinalDirection
+from geometry.graph.canvas import Canvas
+from geometry.graph.edge import Edge
+from geometry.graph.vertex import Vertex
+from geometry.graph.window import Window
+from geometry.vector import Vector
 from procedures.manipulation import establish_connections_along_injection_axis, \
     repair_connections_along_perpendicular_axis
-from geometry import cardinal_direction
 from geometry.direction.constants import *
 from manager import GeometricTileManager
 

@@ -23,7 +23,7 @@ class Edge(NamedTuple):
     a: Vertex
     b: Vertex
 
-    def generate_tag(self) -> EdgeTag:
+    def generate_tag(self) -> 'EdgeTag':
         return EdgeTag(self.a.generate_tag(), self.b.generate_tag())
 
     @property

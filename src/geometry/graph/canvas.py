@@ -27,7 +27,7 @@ class Canvas(Tile):
     # def generate_tag(self) -> Canvas.Tag:
     #     return super().generate_tag()
 
-    def generate_tag(self) -> CanvasTag:
+    def generate_tag(self) -> 'CanvasTag':
         return CanvasTag(self._name if self._name is not None else self.id)
 
 

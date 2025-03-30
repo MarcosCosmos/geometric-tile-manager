@@ -1,4 +1,6 @@
 from display.demo.graph_renderer import render_state
+from geometry.graph.canvas import Canvas
+from geometry.graph.window import Window
 from procedures.manipulation import fill_canvas_with_new_window
 from geometry.vector import Vector
 from manager import GeometricTileManager

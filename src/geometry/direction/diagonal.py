@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import collections
 from functools import cache, singledispatchmethod
-from typing import TYPE_CHECKING, TypeVar, type_check_only
+from typing import TYPE_CHECKING, TypeVar
 
 from geometry.axis import Axis
 from geometry.direction.cardinal import CardinalDirection, CardinalValue
 from geometry.direction import Direction
-from utility import EnumDataclass
+from utility.enum_data import EnumDataclass
 
 T = TypeVar('T')
 
@@ -65,6 +65,7 @@ class DiagonalDataclass(EnumDataclass[DiagonalDirection, T]):
     ...
 
 if TYPE_CHECKING:
+    from typing import type_check_only
     @type_check_only
     class DiagonalDataclass(EnumDataclass[DiagonalDirection, T]):
         """

@@ -4,7 +4,7 @@ from typing import ClassVar, Type, TypeVar, Generic
 
 import parse as ps
 
-from utility import resolve_type_arguments
+from utility.helpers import resolve_type_arguments
 
 T = TypeVar('T')
 

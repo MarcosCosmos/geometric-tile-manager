@@ -1,7 +1,10 @@
 import unittest
 
+from geometry.direction.cardinal import CardinalDirection
+from geometry.direction.diagonal import DiagonalDirection
+from geometry.graph.canvas import Canvas
+from geometry.vector import Vector
 from procedures.manipulation import fill_canvas_with_new_window
-from geometry import diagonal_direction, cardinal_direction
 from manager import GeometricTileManager
 
 

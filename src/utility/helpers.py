@@ -1,8 +1,8 @@
 from types import GenericAlias
-from typing import Type, TypeVar, get_args, get_origin
+from typing import Type, TypeVar, get_args, get_origin, Union
 
 
-def resolve_type_arguments(query_type: Type, target_type: Type | GenericAlias) -> tuple[Type | TypeVar, ...]:
+def resolve_type_arguments(query_type: Type, target_type: Union[Type, GenericAlias]) -> tuple[Union[Type, TypeVar], ...]:
     """
     Resolves the type arguments of the query type as supplied by the target type of any of its bases.
     Operates in a tail-recursive fashion, and drills through the hierarchy of generic base types breadth-first in left-to-right order to correctly identify the type arguments that need to be supplied to the next recursive call.

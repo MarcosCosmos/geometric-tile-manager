@@ -6,7 +6,7 @@ from geometry.graph.edge import Edge
 from geometry.graph.helpers import parse_tag
 from geometry.graph.tag import TaggableElement, Tag
 from geometry.graph.vertex import Vertex, VertexTag
-from utility import enum_dataclass
+from utility.enum_data import enum_dataclass
 
 
 class Box(TaggableElement):
@@ -47,7 +47,7 @@ class Box(TaggableElement):
     def sides(self):
         return Box.Sides(self)
 
-    def generate_tag(self) -> BoxTag:
+    def generate_tag(self) -> 'BoxTag':
         return BoxTag(*map(Vertex.generate_tag, self.corners))
 
     @property

@@ -1,7 +1,7 @@
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Final, Optional, NamedTuple
+from typing import Final, Optional, NamedTuple, TYPE_CHECKING
 
 import parse as ps
 
@@ -9,10 +9,19 @@ from geometry.direction.cardinal import CardinalDirection
 from geometry.direction.diagonal import DiagonalDirection
 from geometry.vector import Vector
 from geometry.graph.box import Box
-from geometry.graph.canvas import Canvas
 from geometry.graph.tag import Tag
 from geometry.graph.vertex import Vertex
 
+if TYPE_CHECKING:
+    from geometry.graph.canvas import Canvas
+
+class TileId(NamedTuple):
+    """
+    Wrapper for internally generated tile ids to prevent name conflicts with e.g. actual OS window ids, which may be commonly used as names in practice.
+    """
+    number: int
+    def __str__(self):
+        return f'<{self.number}>'
 
 class Tile(Box):
     """
@@ -38,7 +47,7 @@ class Tile(Box):
             each_side[-1].neighbours[perpendicular_directions[0]] = [each_side[0]]
 
     @abstractmethod
-    def generate_tag(self) -> TileTag:
+    def generate_tag(self) -> 'TileTag':
         ...
 
     @property
@@ -50,17 +59,8 @@ class Tile(Box):
         return self._name
     @property
     def is_sentinel(self):
+        from geometry.graph.canvas import Canvas
         return isinstance(self, Canvas)
-
-
-class TileId(NamedTuple):
-    """
-    Wrapper for internally generated tile ids to prevent name conflicts with e.g. actual OS window ids, which may be commonly used as names in practice.
-    """
-    number: int
-    def __str__(self):
-        return f'<{self.number}>'
-
 
 @dataclass
 class TileTag(Tag[Tile]):

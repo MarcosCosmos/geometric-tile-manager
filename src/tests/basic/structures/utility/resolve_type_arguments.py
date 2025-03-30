@@ -5,6 +5,89 @@ from utility.helpers import resolve_type_arguments
 
 
 class MyTestCase:
+    def test_from_reddit(self):
+        T = TypeVar('T')
+        U = TypeVar('U')
+        Q = TypeVar('Q')
+        R = TypeVar('R')
+
+        W = TypeVar('W')
+        X = TypeVar('X')
+        Y = TypeVar('Y')
+        Z = TypeVar('Z')
+
+        class A(Generic[T, U, Q, R]):
+            ...
+
+        class NestedA(Generic[T, U, Q]):
+            ...
+
+        class NestedB(Generic[T]):
+            ...
+
+        class NoParams:
+            ...
+
+        class B(NoParams, NestedA[U, Q, U], A[int, NestedA[Q, Q, Q], Q, U], NestedB[R]):
+            ...
+
+        class C(B[T, str, int]):
+            ...
+
+        class D(C[int]):
+            ...
+
+        class E(D):
+            ...
+
+        class F(E):
+            ...
+
+        class G(Generic[T]):
+            ...
+
+        class H(Generic[T]):
+            ...
+
+        class I(G[int]):
+            ...
+
+        class J(I, H[str]):
+            ...
+
+        print(resolve_type_arguments(A, A))  # (~T, ~U, ~Q, ~R)
+        print(resolve_type_arguments(A, A[W, X, Y, Z]))  # (~W, ~X, ~Y, ~Z)
+        print(resolve_type_arguments(A, B))  # (<class 'int'>, __main__.NestedA[~Q, ~Q, ~Q], ~Q, ~U)
+        print(resolve_type_arguments(A, B[W, X, Y]))  # (<class 'int'>, __main__.NestedA[~X, ~X, ~X], ~X, ~W)
+        print(resolve_type_arguments(B, B))  # (~U, ~Q, ~R)
+        print(resolve_type_arguments(B, B[W, X, Y]))  # (~W, ~X, ~Y)
+        print(resolve_type_arguments(A, C))  # (<class 'int'>, __main__.NestedA[str, str, str], <class 'str'>, ~T)
+        print(resolve_type_arguments(A, C[W]))  # (<class 'int'>, __main__.NestedA[str, str, str], <class 'str'>, ~W)
+        print(resolve_type_arguments(B, C))  # (~T, <class 'str'>, <class 'int'>)
+        print(resolve_type_arguments(B, C[W]))  # (~W, <class 'str'>, <class 'int'>)
+        print(resolve_type_arguments(C, C))  # (~T,)
+        print(resolve_type_arguments(C, C[W]))  # (~W,)
+        print(resolve_type_arguments(A,
+                                     D))  # (<class 'int'>, __main__.NestedA[str, str, str], <class 'str'>, <class 'int'>)
+        print(resolve_type_arguments(B, D))  # (<class 'int'>, <class 'str'>, <class 'int'>)
+        print(resolve_type_arguments(C, D))  # (<class 'int'>,)
+        print(resolve_type_arguments(D, D))  # ()
+        print(resolve_type_arguments(A,
+                                     E))  # (<class 'int'>, __main__.NestedA[str, str, str], <class 'str'>, <class 'int'>)
+        print(resolve_type_arguments(B, E))  # (<class 'int'>, <class 'str'>, <class 'int'>)
+        print(resolve_type_arguments(C, E))  # (<class 'int'>,)
+        print(resolve_type_arguments(D, E))  # ()
+        print(resolve_type_arguments(E, E))  # ()
+        print(resolve_type_arguments(A,
+                                     F))  # (<class 'int'>, __main__.NestedA[str, str, str], <class 'str'>, <class 'int'>)
+        print(resolve_type_arguments(B, F))  # (<class 'int'>, <class 'str'>, <class 'int'>)
+        print(resolve_type_arguments(C, F))  # (<class 'int'>,)
+        print(resolve_type_arguments(D, F))  # ()
+        print(resolve_type_arguments(E, F))  # ()
+        print(resolve_type_arguments(F, F))  # ()
+        print(resolve_type_arguments(G, J))
+
+
     def test_something(self):
 
         #todo: convert this into actual unit tests with asserts instead of printouts, split up cases.
@@ -84,4 +167,4 @@ class MyTestCase:
 
 
 if __name__ == '__main__':
-    MyTestCase().test_something()
+    MyTestCase().test_from_reddit()

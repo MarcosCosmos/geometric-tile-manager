@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Type, Optional
 
-from geometry.graph.neighbourhood import TileNeighbourhood
+from geometry.graph.neighbourhood import TileNeighbourhood, NarrowTileNeighbourhood, WideTileNeighbourhood
 
 
 class DirectionSensitiveTiebreaker:
