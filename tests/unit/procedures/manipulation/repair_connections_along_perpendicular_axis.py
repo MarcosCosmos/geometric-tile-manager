@@ -4,7 +4,7 @@ from procedures.manipulation import establish_connections_along_injection_axis, 
 from structures.geomtry.CardinalDirection import CardinalDirection
 from structures.geomtry.Vector import Vector
 from structures.graph import Edge, Vertex, Window, Wall
-from structures.manager import GeometricTileManager
+from structures.GeometricTileManager import GeometricTileManager
 from structures.geomtry.DiagonaDataclass import *
 
 

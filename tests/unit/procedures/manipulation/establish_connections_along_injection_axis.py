@@ -6,7 +6,7 @@ from structures.geomtry.Axis import Axis
 from structures.geomtry.DiagonalDirection import DiagonalDirection
 from structures.geomtry.Vector import Vector
 from structures.graph import Window
-from structures.manager import GeometricTileManager
+from structures.GeometricTileManager import GeometricTileManager
 from structures.geomtry.DiagonaDataclass import *
 
 class Cases(unittest.TestCase):

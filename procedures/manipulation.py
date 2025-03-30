@@ -4,7 +4,7 @@ from procedures.examination import is_divided, are_aligned, covers_contents, val
 from structures.geomtry.Axis import Axis
 from structures.geomtry.Vector import Vector
 from structures.graph import Wall, Window, Edge, Vertex, Box
-from structures.manager import GeometricTileManager
+from structures.GeometricTileManager import GeometricTileManager
 from structures.problems import BoxTooSmallForMarginsProblem, StateProblem
 from structures.geomtry.CardinalDirection import CardinalDirection
 

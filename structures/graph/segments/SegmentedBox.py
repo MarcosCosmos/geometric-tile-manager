@@ -3,23 +3,8 @@ from typing import Final, MutableSequence, Sequence
 from procedures.examination import are_aligned, covers_contents
 from structures.graph import Box, Vertex, Edge, IndependentBox
 from structures.geomtry.Axis import Axis
+from structures.graph.segments import Segment, TileSegment
 
-
-class Segment:
-    """
-    A component of a SegmentedBox.
-    The scale axis is the axis along which size is computed.
-    """
-    source: Final[Box]
-    scale_axis: Final[Axis]
-
-    def __init__(self, source: Box, scale_axis: Axis):
-        assert(covers_contents(source))
-        self.source = source
-        self.scale_axis = scale_axis
-
-class TileSegment(Segment):
-    ...
 
 class SegmentedBox(Segment):
     """
