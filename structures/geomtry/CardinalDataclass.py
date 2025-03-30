@@ -9,6 +9,7 @@ T = TypeVar('T')
 class CardinalDataclass(EnumDataclass[CardinalDirection, T]):
     ...
 
+
 if TYPE_CHECKING:
     @type_check_only
     class CardinalDataclass(EnumDataclass[CardinalDirection, T]):

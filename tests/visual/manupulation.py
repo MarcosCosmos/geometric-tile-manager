@@ -1,3 +1,4 @@
+import structures.graph.helpers
 from display.demo.graph_renderer import render_state
 from procedures.manipulation import fill_wall_with_new_window, split_window_with_new_window
 from structures.geomtry.Vector import Vector
@@ -44,10 +45,11 @@ def basic_window_splitting_test():
 
     #todo: move tag lookup tests to unit tests
 
-    print(Tag.parse(str(first_window.generate_tag())))
+    print(structures.graph.helpers.parse_tag(str(first_window.generate_tag())))
     print(second_window.generate_tag())
-    print(Tag.parse(str(gtmInstance.graph[second_window.sides[EAST].generate_tag()].generate_tag())))
-    print(Tag.parse(str(gtmInstance.graph[second_window.corners.north_west.generate_tag()].generate_tag())))
+    print(
+        structures.graph.helpers.parse_tag(str(gtmInstance.graph[second_window.sides[EAST].generate_tag()].generate_tag())))
+    print(structures.graph.helpers.parse_tag(str(gtmInstance.graph[second_window.corners.north_west.generate_tag()].generate_tag())))
 
     #todo: write up automated unit test version.. will use an auto-generated set of splits
     test = gtmInstance.graph[first_window.generate_tag()]

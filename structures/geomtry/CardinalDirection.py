@@ -37,14 +37,14 @@ class CardinalDirection(CardinalValue, Direction):
         )
 
     @classmethod
-    def _make(*args, **kwargs) -> 'CardinalDirection':
-        return CardinalDirection(CardinalValue._make(*args, **kwargs))
+    def _make(cls, *args, **kwargs) -> 'CardinalDirection':
+        return cls(CardinalValue._make(*args, **kwargs))
 
     NORTH = (Axis.VERTICAL, False)
     EAST = (Axis.HORIZONTAL, True)
     SOUTH = (Axis.VERTICAL, True)
     WEST = (Axis.HORIZONTAL, False)
 
-    @staticmethod
-    def _make(data) -> 'CardinalDirection':
-        return CardinalDirection(CardinalValue._make(data))
+    # @staticmethod
+    # def _make(data) -> 'CardinalDirection':
+    #     return CardinalDirection(CardinalValue._make(data))

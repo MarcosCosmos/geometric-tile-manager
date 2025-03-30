@@ -1,7 +1,7 @@
 from typing import Final, MutableSequence, Sequence
 
 from procedures.examination import are_aligned, covers_contents
-from structures.graph import Box, Vertex, Edge, IndependantBox
+from structures.graph import Box, Vertex, Edge, IndependentBox
 from structures.geomtry.Axis import Axis
 
 
@@ -75,7 +75,7 @@ class SegmentedBox(Segment):
                             #the segment is a single tile, no sub-segmentation is required.
                             self._segments.append(TileSegment(next_edge.a.owner, scale_axis))
                         else:
-                            self._segments.append(SegmentedBox(IndependantBox(*{
+                            self._segments.append(SegmentedBox(IndependentBox(*{
                                 each_dir.snake_case_name: each_vertex for (each_dir, each_vertex) in zip(
                                     (diag for card in segmentation_axis.directions for diag in card.diagonals),
                                     (*last_edge, *next_edge)

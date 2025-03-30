@@ -1,5 +1,5 @@
 from typing import NamedTuple
-from structures.geomtry.DiagonaDataclass import Axis
+from structures.geomtry import Axis
 
 class CardinalValue(NamedTuple):
     """

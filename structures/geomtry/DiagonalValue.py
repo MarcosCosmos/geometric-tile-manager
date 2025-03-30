@@ -8,7 +8,7 @@ class DiagonalValue(collections.namedtuple('_DiagonalValue', tuple(each.snake_ca
     #note: trying to directly inherit NamedTuple fails due to overriding _make.
 
     """
-    Enum value for CardinalDirection, in namedtuple form.
+    Enum value for DiagonalDirection, in namedtuple form.
     """
     horizontal: CardinalDirection
     vertical: CardinalDirection
