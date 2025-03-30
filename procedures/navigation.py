@@ -4,7 +4,7 @@ from procedures.examination import is_divided
 from structures.geomtry.CardinalDirection import CardinalDirection
 from structures.graph import Tile, Wall
 from structures.GeometricTileManager import GeometricTileManager
-from structures.navigation import InteriorWallNeighbourhood
+from structures.navigation.InteriorWallNeighbourhood import InteriorWallNeighbourhood
 
 """
 Basic navigation procedures related to user actions (like changing window focus).

@@ -1,7 +1,9 @@
 from __future__ import annotations
 from typing import Type, TypeVar, Optional
 
-from structures.navigation import TileNeighbourhood, NarrowTileNeighbourhood, WideTileNeighbourhood
+from structures.navigation.WideTileNeighbourhood import WideTileNeighbourhood
+from structures.navigation.NarrowTileNeighbourhood import NarrowTileNeighbourhood
+from structures.navigation.TileNeighbourhood import TileNeighbourhood
 
 T = TypeVar('T')
 
