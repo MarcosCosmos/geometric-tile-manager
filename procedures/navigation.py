@@ -2,9 +2,9 @@ from typing import Optional
 
 from procedures.examination import is_divided
 from structures.geomtry.CardinalDirection import CardinalDirection
-from structures.graph import Tile, Wall
+from structures.graph import Tile, Canvas
 from structures.GeometricTileManager import GeometricTileManager
-from structures.navigation.InteriorWallNeighbourhood import InteriorWallNeighbourhood
+from structures.navigation.InteriorCanvasNeighbourhood import InteriorCanvasNeighbourhood
 
 """
 Basic navigation procedures related to user actions (like changing window focus).
@@ -26,7 +26,7 @@ def next_tile(manager: GeometricTileManager, initial: Tile, direction: CardinalD
 
 def next_undivided_tile(manager: GeometricTileManager, initial: Tile, direction: CardinalDirection) -> Optional[Tile]:
     """
-    This variant is limited to Tiles whose corners are all each other's nearest neighbours (all tiles, but only empty walls).
+    This variant is limited to Tiles whose corners are all each other's nearest neighbours (all tiles, but only empty canvass).
     - This matches the most common conditions for focusable content in tiling window managers.
 
     When multiple options are available, option furthest towards the top-left/bottom-right corner will be taken, depend on which corner the input direction faces.
@@ -38,15 +38,15 @@ def next_undivided_tile(manager: GeometricTileManager, initial: Tile, direction:
         return None
 
     if not initial.is_sentinel and result.is_sentinel:
-        #this means we are moving from a Window to find its containing wall, so we want to skip to the next wall, if any
+        #this means we are moving from a Window to find its containing canvas, so we want to skip to the next canvas, if any
         result = next_tile(manager, result, direction)
 
         if result is None:
             return None
 
     #isinstance actually makes more sense that is_sentinel here
-    if isinstance(result, Wall) and is_divided(result):
-        candidates = InteriorWallNeighbourhood(result)[direction]
+    if isinstance(result, Canvas) and is_divided(result):
+        candidates = InteriorCanvasNeighbourhood(result)[direction]
         result = manager.settings.static_config.navigation.tiebreaker(candidates)
 
     return result

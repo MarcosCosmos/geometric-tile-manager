@@ -7,7 +7,7 @@ class Window(Tile):
     Concrete, indivisible Tiles representing the geometry of an on-screen object (presumably a program window).
 
     Note:
-        Theoretically, a Window could hold a nested Wall, given suitable polymorphic abstraction of size checks etc.
+        Theoretically, a Window could hold a nested Canvas, given suitable polymorphic abstraction of size checks etc.
         However, for now such ideas are out of scope.
     """
 

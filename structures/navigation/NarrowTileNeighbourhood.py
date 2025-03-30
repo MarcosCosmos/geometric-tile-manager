@@ -9,5 +9,5 @@ class NarrowTileNeighbourhood(ExteriorTileNeighbourhood):
 
     This is the default neighbourhood used for graph traversal.
     """
-    _START_INDEX= -1
+    _START_INDEX = -1
     _END_INDEX = 0

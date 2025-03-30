@@ -1,7 +1,7 @@
 from structures.graph.Tag import Tag
 from structures.graph.TileTag import TileTag
-from structures.graph.Wall import Wall
+from structures.graph.Canvas import Canvas
 
 
-class WallTag(TileTag, Tag[Wall]):
+class SpaceTag(TileTag, Tag[Canvas]):
     ...

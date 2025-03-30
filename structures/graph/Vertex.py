@@ -24,7 +24,7 @@ class Vertex(TaggableElement):
 
     owner: Final[Tile]
     role: Final[DiagonalDirection]
-    location: Vector[int] #not optional, so Windows should only be created via algorithms - walls could possibly simulate free floating layers? or an extension of walls.
+    location: Vector[int] #not optional, so Windows should only be created via algorithms - canvass could possibly simulate free floating layers? or an extension of canvass.
     neighbours: Final[VertexNeighbourhood]
 
     def __init__(self, location: Vector[int], owner: Tile, role: DiagonalDirection):

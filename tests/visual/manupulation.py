@@ -1,8 +1,8 @@
 import structures.graph.helpers
 from display.demo.graph_renderer import render_state
-from procedures.manipulation import fill_wall_with_new_window, split_window_with_new_window
+from procedures.manipulation import fill_canvas_with_new_window, split_window_with_new_window
 from structures.geomtry.Vector import Vector
-from structures.graph import Wall, TileId, Window, Edge, Tag, TileTag
+from structures.graph import Canvas, TileId, Window, Edge, Tag, TileTag
 from structures.GeometricTileManager import GeometricTileManager
 from structures.geomtry.DiagonaDataclass import *
 
@@ -11,12 +11,12 @@ def basic_window_splitting_test():
     gtmInstance = GeometricTileManager()
     gtmInstance.settings.static_config.constraints.window_margin = 30
 
-    first_wall = gtmInstance.graph.create_tile(Wall, Vector(100, 100), Vector(300, 300))
+    first_canvas = gtmInstance.graph.create_tile(Canvas, Vector(100, 100), Vector(300, 300))
 
-    first_window = fill_wall_with_new_window(gtmInstance, first_wall)
+    first_window = fill_canvas_with_new_window(gtmInstance, first_canvas)
 
     try:
-        fill_wall_with_new_window(gtmInstance, first_wall)
+        fill_canvas_with_new_window(gtmInstance, first_canvas)
     except ValueError as err:
         print('Caught expected exception, details: ', err)
 
@@ -38,7 +38,7 @@ def basic_window_splitting_test():
 
     gtmInstance.graph.name_tile(second_window, 'heya')
 
-    for each_corner in first_wall.corners:
+    for each_corner in first_canvas.corners:
         for each_cardinal in each_corner.role.opposite.value:
             each_neighbour = each_corner.neighbours[each_cardinal][0]
             assert each_neighbour.location == each_corner.location

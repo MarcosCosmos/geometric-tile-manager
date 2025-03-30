@@ -14,7 +14,7 @@ class VertexNeighbourhood(CardinalDataclass[MutableSequence['Vertex']]):
 
     Neighbourhoods are initialised to be empty on all sides, then become populated after the vertex is created, due to the need for circular reference.
 
-    Note: After proper population, the neighbours may be ONLY be None for the outgoing directions of a Wall.
+    Note: After proper population, the neighbours may be ONLY be None for the outgoing directions of a Canvas.
 
-    Note: the possible lengths on each side for vertex neighbours must be in the range [0,2], where 0 is only possible for the outward sides of a Wall and 2 is only possible if the vertex is between the corners of two corners of the associated neighbouring tile(s)
+    Note: the possible lengths on each side for vertex neighbours must be in the range [0,2], where 0 is only possible for the outward sides of a Canvas and 2 is only possible if the vertex is between the corners of two corners of the associated neighbouring tile(s)
     """

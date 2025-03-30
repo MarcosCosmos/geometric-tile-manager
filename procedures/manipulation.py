@@ -3,7 +3,7 @@ from typing import Sequence, Optional
 from procedures.examination import is_divided, are_aligned, covers_contents, validate
 from structures.geomtry.Axis import Axis
 from structures.geomtry.Vector import Vector
-from structures.graph import Wall, Window, Edge, Vertex, Box
+from structures.graph import Canvas, Window, Edge, Vertex, Box
 from structures.GeometricTileManager import GeometricTileManager
 from structures.problems import BoxTooSmallForMarginsProblem, StateProblem
 from structures.geomtry.CardinalDirection import CardinalDirection
@@ -89,7 +89,7 @@ def repair_connections_along_perpendicular_axis(perpendicular_axis: Axis, exteri
 
             start_index = 0
 
-            #for each interior corner which happens to be the edge of the wall, its only neighbour in that direction should be the corner, and they should be bidirectionnally connected. For all others, it should be both corners.
+            #for each interior corner which happens to be the edge of the canvas, its only neighbour in that direction should be the corner, and they should be bidirectionnally connected. For all others, it should be both corners.
             if each_interior_edge.a.location == each_exterior_edge.a.location:
                 each_interior_edge.a.neighbours[each_outward_direction] = [each_exterior_edge.a]
                 each_exterior_edge.a.neighbours[each_outward_direction.opposite] = [each_interior_edge.a]
@@ -200,16 +200,16 @@ def repair_connections_along_perpendicular_axis(perpendicular_axis: Axis, exteri
 
                 each_interior_vertex.neighbours[each_outward_direction] = candidate_neighbours
 
-def fill_wall_with_new_window(manager: GeometricTileManager, target: Wall) -> Window:
+def fill_canvas_with_new_window(manager: GeometricTileManager, target: Canvas) -> Window:
     """
-    Note: although most procedures for creating Windows can technically succeed but return results that show problems (constraint violations), this procedure throws a ValueError if the wall is already divided (has Windows inside).
+    Note: although most procedures for creating Windows can technically succeed but return results that show problems (constraint violations), this procedure throws a ValueError if the canvas is already divided (has Windows inside).
         It is intended to be used as part of a broader procedure that handles these errors.
     :param graphMgr:
     :param target:
     :return:
     """
     if is_divided(target):
-        raise ValueError(f"Wall {target.generate_tag()} is not empty.")
+        raise ValueError(f"Canvas {target.generate_tag()} is not empty.")
     else:
         result = manager.graph.create_tile(Window, *map(lambda x: x.location, target.corners))
         for (each_result_corner, each_target_corner) in zip(result.corners, target.corners):

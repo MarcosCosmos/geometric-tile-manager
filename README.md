@@ -80,7 +80,7 @@ Here are some common concepts and features that, whilst useful to end users, are
 
 # Milestones & Progress
 ## Completed
-- Freely positioned, manually linked workspaces with defined positions (AKA Walls, in the codebase).
+- Freely positioned, manually linked workspaces with defined positions (AKA Canvases, in the codebase).
 - Algorithms to automatically repair adjacency links after manipulations.
 - Printing and parsing of element tags
 - Use of tags as lookup keys

@@ -5,16 +5,16 @@ from typing import Sequence
 from procedures.examination import is_divided
 from structures.navigation import TileNeighbourhood
 from structures.geomtry import CardinalDirection
-from structures.graph import Wall, Tile
+from structures.graph import Canvas, Tile
 
 
-class InteriorWallNeighbourhood(TileNeighbourhood):
+class InteriorCanvasNeighbourhood(TileNeighbourhood):
     """
-    Unlike exterior neighbourhoods, this defines available tiles on interior of the wall, facing inward from the chosen side.
+    Unlike exterior neighbourhoods, this defines available tiles on interior of the canvas, facing inward from the chosen side.
     """
-    _owner: Wall
+    _owner: Canvas
 
-    def __init__(self, owner: Wall):
+    def __init__(self, owner: Canvas):
         super().__init__(owner)
 
     def __getitem__(self, side: CardinalDirection) -> Sequence[Tile]:
@@ -24,7 +24,7 @@ class InteriorWallNeighbourhood(TileNeighbourhood):
         :return:
         """
         if not is_divided(self._owner):
-            return [] #if the wall is unbroken it means there are no contents.
+            return [] #if the canvas is unbroken it means there are no contents.
 
         targetCorners = self.owner.sides(side.diagonals)
         forwardDirection = side.axis.perpendicular.directions[-1]

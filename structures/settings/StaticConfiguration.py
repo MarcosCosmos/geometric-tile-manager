@@ -32,8 +32,8 @@ class StaticConfiguration:
         #fallback colours
         default_tile_border_color: str
         default_tile_border_width: int
-        _wall_border_color: Optional[str]
-        _wall_border_width: Optional[int]
+        _canvas_border_color: Optional[str]
+        _canvas_border_width: Optional[int]
         _window_border_color: Optional[str]
         _window_border_width: Optional[int]
 
@@ -47,8 +47,8 @@ class StaticConfiguration:
             self.bg_color = 'white'
             self.default_tile_border_color = 'black'
             self.default_tile_border_width = 1
-            self._wall_border_color = 'darkgrey'
-            self._wall_border_width = None
+            self._canvas_border_color = 'darkgrey'
+            self._canvas_border_width = None
             self._window_border_color = None
             self._window_border_width = None
             self.edge_color = 'red'
@@ -56,16 +56,16 @@ class StaticConfiguration:
             self.sentinel_edge_color = 'blue'
 
         @property
-        def wall_border_color(self) -> str:
-            return self._wall_border_color if self._wall_border_color is not None else self.default_tile_border_color
+        def canvas_border_color(self) -> str:
+            return self._canvas_border_color if self._canvas_border_color is not None else self.default_tile_border_color
 
         @property
         def window_border_color(self) -> str:
             return self._window_border_color if self._window_border_color is not None else self.default_tile_border_color
 
         @property
-        def wall_border_width(self) -> int:
-            return self._wall_border_width if self._wall_border_width is not None else self.default_tile_border_width
+        def canvas_border_width(self) -> int:
+            return self._canvas_border_width if self._canvas_border_width is not None else self.default_tile_border_width
         @property
         def window_border_width(self) -> int:
             return self._window_border_width if self._window_border_width is not None else self.default_tile_border_width

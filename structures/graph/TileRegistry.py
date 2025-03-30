@@ -4,7 +4,7 @@ from functools import singledispatchmethod
 from typing import Final, Iterator, Mapping, MutableMapping, Sequence, Type, TypeVar, overload
 
 from structures.geomtry import DiagonalDirection, Vector
-from structures.graph import Tile, TileId, Window, Wall, TileTag, BoxTag, Box, WindowTag, WallTag, VertexTag, Vertex, \
+from structures.graph import Tile, TileId, Window, Canvas, TileTag, BoxTag, Box, WindowTag, SpaceTag, VertexTag, Vertex, \
     EdgeTag, Edge, Tag
 
 T = TypeVar('T')
@@ -16,7 +16,7 @@ class TileRegistry:
     It also acts as a factory for all tiles, to ensure that it maintains access
 
     Rules for uniquely identifying and describing graph objects:
-    - Wall ids are distinct from Window Ids, so the full descriptor for a tile must include its type.
+    - Canvas ids are distinct from Window Ids, so the full descriptor for a tile must include its type.
     - Vertices are described by their
 
     This registry is a factory, but it does not manage tile linkage or geometry, it only provides lookup and factory functionality.
@@ -33,7 +33,7 @@ class TileRegistry:
         self._tile_id_iter = itertools.count()
         self._by_type = {
             Window: {},
-            Wall: {}
+            Canvas: {}
         }
         self._by_name = {}
 
@@ -107,7 +107,7 @@ class TileRegistry:
         ...
 
     @overload
-    def __getitem__(self, key: WallTag) -> Wall:
+    def __getitem__(self, key: SpaceTag) -> Canvas:
         ...
 
     @overload

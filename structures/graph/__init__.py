@@ -14,7 +14,7 @@ from TileTag import TileTag
 from Vertex import Vertex
 from VertexNeighbourhood import VertexNeighbourhood
 from VertexTag import VertexTag
-from Wall import Wall
-from WallTag import WallTag
+from Canvas import Canvas
+from CanvasTag import SpaceTag
 from Window import Window
 from WindowTag import WindowTag

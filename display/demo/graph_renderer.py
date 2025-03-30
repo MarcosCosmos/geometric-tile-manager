@@ -3,12 +3,12 @@ from tkinter import Tk, Canvas
 from structures.geomtry.Axis import Axis
 from structures.GeometricTileManager import GeometricTileManager
 from structures.geomtry.Vector import Vector
-from structures.graph import Wall, Window
+from structures.graph import Canvas, Window
 
 
 def render_state(target: GeometricTileManager, canvasSize: Vector[int], show_links: bool = False):
     """
-    This demo renders a single window with (potentially) multiple Walls, but real-world usage will involve one window per wall.
+    This demo renders a single window with (potentially) multiple Canvass, but real-world usage will involve one window per canvas.
     :param target:
     :return:
     """
@@ -16,14 +16,14 @@ def render_state(target: GeometricTileManager, canvasSize: Vector[int], show_lin
 
     theCanvas = Canvas(root, bg="white", height=canvasSize.vertical, width=canvasSize.horizontal)
 
-    for each_wall in target.graph.by_type[Wall].values():
+    for each_canvas in target.graph.by_type[Canvas].values():
         theCanvas.create_rectangle(
-            each_wall.corners.north_west.location.horizontal,
-            each_wall.corners.north_west.location.vertical,
-            each_wall.corners.south_east.location.horizontal,
-            each_wall.corners.south_east.location.vertical,
-            outline=target.settings.static_config.render.wall_border_color,
-            width=target.settings.static_config.render.wall_border_width,
+            each_canvas.corners.north_west.location.horizontal,
+            each_canvas.corners.north_west.location.vertical,
+            each_canvas.corners.south_east.location.horizontal,
+            each_canvas.corners.south_east.location.vertical,
+            outline=target.settings.static_config.render.canvas_border_color,
+            width=target.settings.static_config.render.canvas_border_width,
         )
     for each_window in target.graph.by_type[Window].values():
         theCanvas.create_rectangle(
@@ -35,8 +35,8 @@ def render_state(target: GeometricTileManager, canvasSize: Vector[int], show_lin
             width=target.settings.static_config.render.window_border_width
         )
     if show_links:
-        for each_wall in target.graph.by_type[Wall].values():
-            for each_corner in each_wall.corners:
+        for each_canvas in target.graph.by_type[Canvas].values():
+            for each_corner in each_canvas.corners:
                 each_diagonal = each_corner.role
                 for each_cardinal in each_diagonal.opposite.value:
                     each_axis = each_cardinal.axis

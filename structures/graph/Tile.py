@@ -1,5 +1,5 @@
 from structures.geomtry import CardinalDirection, DiagonalDirection, Vector
-from structures.graph import Box, TileId, TileTag, Vertex, Wall
+from structures.graph import Box, TileId, TileTag, Vertex, Canvas
 
 
 from abc import abstractmethod
@@ -42,4 +42,4 @@ class Tile(Box):
         return self._name
     @property
     def is_sentinel(self):
-        return isinstance(self, Wall)
+        return isinstance(self, Canvas)

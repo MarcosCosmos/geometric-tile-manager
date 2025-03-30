@@ -3,14 +3,14 @@ import unittest
 from procedures.manipulation import establish_connections_along_injection_axis, repair_connections_along_perpendicular_axis
 from structures.geomtry.CardinalDirection import CardinalDirection
 from structures.geomtry.Vector import Vector
-from structures.graph import Edge, Vertex, Window, Wall
+from structures.graph import Edge, Vertex, Window, Canvas
 from structures.GeometricTileManager import GeometricTileManager
 from structures.geomtry.DiagonaDataclass import *
 
 
 class MyTestCase(unittest.TestCase):
 
-    def test_single_row_in_wall(self):
+    def test_single_row_in_canvas(self):
         """
         This test is only valid under the assumption that establish_connections_along_injection_axis is working correctly, as it depends on that to link the windows horizontally prior to vertical repair.
         :return:
@@ -21,17 +21,17 @@ class MyTestCase(unittest.TestCase):
         second_window = gtmInstance.graph.create_tile(Window, Vector(300, 100), Vector(100, 100))
         third_window = gtmInstance.graph.create_tile(Window, Vector(500, 100), Vector(100, 100))
 
-        first_wall = gtmInstance.graph.create_tile(Wall, first_window.corners.north_west.location, third_window.corners.north_east.location, third_window.corners.south_east.location, first_window.corners.south_west.location)
+        first_canvas = gtmInstance.graph.create_tile(Canvas, first_window.corners.north_west.location, third_window.corners.north_east.location, third_window.corners.south_east.location, first_window.corners.south_west.location)
 
         all_windows = [first_window, second_window, third_window]
 
-        establish_connections_along_injection_axis(first_window, HORIZONTAL, ([first_wall.corners.north_west], [first_wall.corners.south_west]), ([second_window.corners.north_west], [second_window.corners.south_west]))
+        establish_connections_along_injection_axis(first_window, HORIZONTAL, ([first_canvas.corners.north_west], [first_canvas.corners.south_west]), ([second_window.corners.north_west], [second_window.corners.south_west]))
 
-        establish_connections_along_injection_axis(third_window, HORIZONTAL, ([second_window.corners.north_east], [second_window.corners.south_east]), ([first_wall.corners.north_east], [first_wall.corners.south_east]))
+        establish_connections_along_injection_axis(third_window, HORIZONTAL, ([second_window.corners.north_east], [second_window.corners.south_east]), ([first_canvas.corners.north_east], [first_canvas.corners.south_east]))
 
 
-        negative_perpendicular_exterior_edge: Edge = first_wall.sides.north
-        positive_perpendicular_exterior_edge: Edge = first_wall.sides.south
+        negative_perpendicular_exterior_edge: Edge = first_canvas.sides.north
+        positive_perpendicular_exterior_edge: Edge = first_canvas.sides.south
 
         negative_perpendicular_interior_edge: Edge = Edge(first_window.corners.north_west, third_window.corners.north_east)
         positive_perpendicular_interior_edge: Edge = Edge(first_window.corners.south_west, third_window.corners.south_east)
@@ -45,14 +45,14 @@ class MyTestCase(unittest.TestCase):
         outer_corners = (first_window.corners.north_west, third_window.corners.north_east, third_window.corners.south_east, first_window.corners.south_west)
         for each_window_corner in outer_corners:
             each_direction = each_window_corner.role
-            each_wall_corner = first_wall.corners[each_direction]
+            each_canvas_corner = first_canvas.corners[each_direction]
             for each_cardinal_component in each_direction.value:
                 each_cardinal_component: CardinalDirection
-                self.assertEqual(len(each_wall_corner.neighbours[each_cardinal_component.opposite]), 1)
-                self.assertIs(each_wall_corner.neighbours[each_cardinal_component.opposite][0], each_window_corner)
+                self.assertEqual(len(each_canvas_corner.neighbours[each_cardinal_component.opposite]), 1)
+                self.assertIs(each_canvas_corner.neighbours[each_cardinal_component.opposite][0], each_window_corner)
 
                 self.assertEqual(len(each_window_corner.neighbours[each_cardinal_component]), 1)
-                self.assertIs(each_window_corner.neighbours[each_cardinal_component][0], each_wall_corner)
+                self.assertIs(each_window_corner.neighbours[each_cardinal_component][0], each_canvas_corner)
 
         upper_inner_vertices: list[Vertex] = []
 
@@ -62,7 +62,7 @@ class MyTestCase(unittest.TestCase):
             upper_inner_vertices.append(current)
 
         for each_vertex in upper_inner_vertices:
-            self.assertSequenceEqual(each_vertex.neighbours.north, first_wall.sides.north)
+            self.assertSequenceEqual(each_vertex.neighbours.north, first_canvas.sides.north)
 
         lower_inner_vertices: list[Vertex] = []
         current = first_window.corners.south_west
@@ -72,7 +72,7 @@ class MyTestCase(unittest.TestCase):
 
 
         for each_vertex in lower_inner_vertices:
-            self.assertSequenceEqual(each_vertex.neighbours.south, first_wall.sides.south)
+            self.assertSequenceEqual(each_vertex.neighbours.south, first_canvas.sides.south)
 
 
 if __name__ == '__main__':
