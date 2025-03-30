@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from structures.settings.StaticConfiguration import StaticConfiguration
+from structures.settings import StaticConfiguration
 
 class Settings:
     static_config: StaticConfiguration

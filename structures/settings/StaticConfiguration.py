@@ -2,7 +2,7 @@ from structures.navigation.TileNeighbourhood import TileNeighbourhood
 from structures.settings import DirectionSensitiveTiebreaker, TileNeighbourhoodOption
 
 
-from typing import Type
+from typing import Type, Optional
 
 
 class StaticConfiguration:
