@@ -1,4 +1,4 @@
-from structures.problems.EdgeProblem import EdgeProblem
+from structures.problems import EdgeProblem
 
 
 class OutOfOrderProblem(EdgeProblem):

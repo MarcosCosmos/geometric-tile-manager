@@ -1,5 +1,5 @@
 from structures.graph import Tile
-from structures.problems.BoxProblem import BoxProblem
+from structures.problems import BoxProblem
 
 
 class TileProblem(BoxProblem):

@@ -1,5 +1,5 @@
-from structures.geomtry.Direction import Direction
-from structures.problems.StateProblem import StateProblem
+from structures.geomtry import Direction
+from structures.problems import StateProblem
 
 
 class OrientedProblem(StateProblem):

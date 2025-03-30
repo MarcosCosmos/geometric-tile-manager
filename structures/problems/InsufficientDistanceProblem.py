@@ -1,4 +1,4 @@
-from structures.problems.VertexDistanceProblem import VertexDistanceProblem
+from structures.problems import VertexDistanceProblem
 
 
 class InsufficientDistanceProblem(VertexDistanceProblem):

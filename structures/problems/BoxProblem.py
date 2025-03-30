@@ -1,5 +1,5 @@
 from structures.graph import Box
-from structures.problems.StateProblem import StateProblem
+from structures.problems import StateProblem
 
 
 class BoxProblem(StateProblem):

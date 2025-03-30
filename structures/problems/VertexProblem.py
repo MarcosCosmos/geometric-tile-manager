@@ -1,5 +1,5 @@
 from structures.graph import Vertex
-from structures.problems.StateProblem import StateProblem
+from structures.problems import StateProblem
 
 
 class VertexProblem(StateProblem):

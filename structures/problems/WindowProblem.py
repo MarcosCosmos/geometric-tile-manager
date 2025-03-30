@@ -1,5 +1,5 @@
 from structures.graph import Window
-from structures.problems.TileProblem import TileProblem
+from structures.problems import TileProblem
 
 
 class WindowProblem(TileProblem):

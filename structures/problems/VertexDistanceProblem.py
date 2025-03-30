@@ -1,7 +1,6 @@
 from structures.geomtry.Axis import Axis
 from structures.graph import Vertex
-from structures.problems.AlignedProblem import AlignedProblem
-from structures.problems.VertexProblem import VertexProblem
+from structures.problems import AlignedProblem, VertexProblem
 
 
 class VertexDistanceProblem(VertexProblem, AlignedProblem):

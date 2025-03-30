@@ -1,7 +1,6 @@
-from structures.geomtry.CardinalDirection import CardinalDirection
+from structures.geomtry import CardinalDirection
 from structures.graph import Vertex
-from structures.problems.OrientedProblem import OrientedProblem
-from structures.problems.VertexProblem import VertexProblem
+from structures.problems import OrientedProblem, VertexProblem
 
 
 class NeighbourAbsenceProblem(VertexProblem, OrientedProblem):
