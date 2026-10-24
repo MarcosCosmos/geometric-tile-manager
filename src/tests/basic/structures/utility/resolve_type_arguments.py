@@ -3,7 +3,6 @@ from typing import TypeVar, Generic
 
 from utility.helpers import resolve_type_arguments
 
-
 class MyTestCase:
     def test_from_reddit(self):
         T = TypeVar('T')
