@@ -1,7 +1,7 @@
 pub mod geometry;
 pub mod graph;
 mod result;
-mod ops;
+mod transform;
 
 fn main() {
     println!("Hello, world!");

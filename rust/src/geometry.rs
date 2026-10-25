@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::ops::{Index, Not};
 use crate::geometry::Axis::{X, Y};
-use crate::geometry::Orientation::{Start, End};
+use crate::geometry::Sign::{Negative, Positive};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Point {
@@ -22,24 +22,24 @@ pub enum Axis {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Orientation {
-    Start,
-    End,
+pub enum Sign {
+    Negative,
+    Positive,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Usually associated with a side of a box
 pub struct Cardinal {
     pub axis: Axis,
-    pub orientation: Orientation,
+    pub sign: Sign,
 }
-
-#[derive(Copy, Clone, PartialEq, Eq)]
-/// Usually associated with a corner of a box
-pub struct Diagonal {
-    pub x: Orientation,
-    pub y: Orientation,
-}
+//
+// #[derive(Copy, Clone, PartialEq, Eq)]
+// /// Usually associated with a corner of a box
+// pub struct Diagonal {
+//     pub x: Sign,
+//     pub y: Sign,
+// }
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Rect {
@@ -71,7 +71,7 @@ impl Index<Axis> for Point {
 }
 
 impl Index<Axis> for Diagonal {
-    type Output = Orientation;
+    type Output = Sign;
     fn index(&self, index: Axis) -> &Self::Output {
         match index {
             X => &self.x,
@@ -81,25 +81,25 @@ impl Index<Axis> for Diagonal {
 }
 
 impl Cardinal {
-    /// as in the corners associated with this direction's the side of a box
-    pub fn adjacent_diagonals(&self) -> (Diagonal, Diagonal) {
-        if self.axis == X {
-            (
-                Diagonal { x: self.orientation, y: Start },
-                Diagonal { x: self.orientation, y: End },
-            )
-        } else {
-            (
-                Diagonal { x: Start, y: self.orientation },
-                Diagonal { x: End, y: self.orientation },
-            )
-        }
-    }
-    pub fn cross_directions(&self) -> (Cardinal, Cardinal) {
+    // /// as in the corners associated with this direction's the side of a box
+    // pub fn adjacent_diagonals(&self) -> (Diagonal, Diagonal) {
+    //     if self.axis == X {
+    //         (
+    //             Diagonal { x: self.sign, y: Negative },
+    //             Diagonal { x: self.sign, y: Positive },
+    //         )
+    //     } else {
+    //         (
+    //             Diagonal { x: Negative, y: self.sign },
+    //             Diagonal { x: Positive, y: self.sign },
+    //         )
+    //     }
+    // }
+    pub fn perpendicular_directions(&self) -> (Cardinal, Cardinal) {
         let axis = !self.axis;
         (
-            Cardinal { axis, orientation: Start },
-            Cardinal { axis, orientation: End },
+            Cardinal { axis, sign: Negative },
+            Cardinal { axis, sign: Positive },
         )
     }
 
@@ -111,7 +111,7 @@ impl Cardinal {
             Y if a.y > (b.y + b.height) => Ordering::Greater,
             _ => Ordering::Equal,
         };
-        if self.orientation == End {
+        if self.sign == Positive {
             natural
         } else {
             natural.reverse()
@@ -123,7 +123,7 @@ impl Diagonal {
     /// as in the sides associated with the corner of a box.
     /// The result is always axis align, i.e. (x, y)
     pub fn adjacent_cardinals(&self) -> (Cardinal, Cardinal) {
-        ( Cardinal { axis: X, orientation: self.x }, Cardinal { axis: Y, orientation: self.y })
+        (Cardinal { axis: X, sign: self.x }, Cardinal { axis: Y, sign: self.y })
     }
 }
 
@@ -137,12 +137,12 @@ impl Not for Axis {
     }
 }
 
-impl Not for Orientation {
+impl Not for Sign {
     type Output = Self;
     fn not(self) -> Self::Output {
         match self {
-            Start => End,
-            End => Start,
+            Negative => Positive,
+            Positive => Negative,
         }
     }
 }
@@ -152,7 +152,7 @@ impl Not for Cardinal {
     fn not(self) -> Self::Output {
         Self {
             axis: self.axis,
-            orientation: !self.orientation,
+            sign: !self.sign,
         }
     }
 }
@@ -169,33 +169,33 @@ impl Not for Diagonal {
 
 pub const NORTH: Cardinal = Cardinal {
  axis: Y,
- orientation: Start,
+ sign: Negative,
 };
 pub const SOUTH: Cardinal = Cardinal {
     axis: Y,
-    orientation: End,
+    sign: Positive,
 };
 pub const EAST: Cardinal = Cardinal {
     axis: X,
-    orientation: End,
+    sign: Positive,
 };
 pub const WEST: Cardinal = Cardinal {
     axis: X,
-    orientation: Start,
+    sign: Negative,
 };
-pub const NORTH_WEST: Diagonal = Diagonal {
-    x: Start,
-    y: Start,
-};
-pub const NORTH_EAST: Diagonal = Diagonal {
-    x: End,
-    y: Start,
-};
-pub const SOUTH_EAST: Diagonal = Diagonal {
-    x: End,
-    y: End,
-};
-pub const SOUTH_WEST: Diagonal = Diagonal {
-    x: Start,
-    y: End,
-};
+// pub const NORTH_WEST: Diagonal = Diagonal {
+//     x: Negative,
+//     y: Negative,
+// };
+// pub const NORTH_EAST: Diagonal = Diagonal {
+//     x: Positive,
+//     y: Negative,
+// };
+// pub const SOUTH_EAST: Diagonal = Diagonal {
+//     x: Positive,
+//     y: Positive,
+// };
+// pub const SOUTH_WEST: Diagonal = Diagonal {
+//     x: Negative,
+//     y: Positive,
+// };
