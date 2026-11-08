@@ -1,8 +1,12 @@
 use crate::geometry::{Axis::*, Cardinal, Rect, Sign, Sign::*};
 use crate::result::{Error, Result};
-use crate::transform::{TransformContainer, TransformFragment, TransformStrategy, TransformContent};
+use crate::transform::{
+    TransformContainer, TransformContent, TransformFragment, TransformStrategy,
+};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::HashMap;
+use std::collections::hash_map::IntoIter;
+use std::iter::Peekable;
 use std::ops::{Index, IndexMut};
 use uuid::Uuid;
 
@@ -25,6 +29,21 @@ struct Neighbourhood {
     south: Vec<Uuid>,
     east: Vec<Uuid>,
     west: Vec<Uuid>,
+}
+
+/// Notes:
+/// - There are inter-surface and intra-surface neighbourhoods which have different meanings.
+/// - Gaps may be present either on the inside of a surface or between windows; in htis sense gaps would potentially alter poorly written algorithms
+/// - Storing tiles seperately from neighboy
+#[derive(Clone, Debug, Default)]
+pub struct Graph {
+    tiles: HashMap<Uuid, Tile>,
+    /// Note: each surface has an entry in its own interior neighbourhood.
+    /// The meaning of direction is semi-inverted in that the surface's edges face inwards not outwards, but directionality is otherwise the same.
+    /// E.g. the eastern neighbourhood of a surface faces inwardly east from the western side, whereas a normal window would face outwardly east from the eastern side.
+    intra_surface_neighbourhoods: HashMap<Uuid, Neighbourhood>,
+    /// inter_surface_neighbours are the neighbourhoods between surfaces, and therefore face outwards.
+    inter_surface_neighbourhoods: HashMap<Uuid, Neighbourhood>,
 }
 
 impl Neighbourhood {
@@ -101,23 +120,79 @@ impl IndexMut<Cardinal> for Neighbourhood {
     }
 }
 
-/// Notes:
-/// - There are inter-surface and intra-surface neighbourhoods which have different meanings.
-/// - Gaps may be present either on the inside of a surface or between windows; in htis sense gaps would potentionally alter poorly written algorithms
-#[derive(Clone, Debug, Default)]
-pub struct Graph {
-    tiles: HashMap<Uuid, Tile>,
-    /// Note: each surface has an entry in its own interior neighbourhood.
-    /// The meaning of direction is semi-inverted in that the surface's edges face inwards not outwards, but directionality is otherwise the same.
-    /// E.g. the eastern neighbourhood of a surface faces inwardly east from the western side, whereas a normal window would face outwardly east from the eastern side.
-    intra_surface_neighbourhoods: HashMap<Uuid, Neighbourhood>,
-    /// inter_surface_neighbours are the neighbourhoods between surfaces, and therefore face outwards.
-    inter_surface_neighbourhoods: HashMap<Uuid, Neighbourhood>,
-}
-
 impl Tile {
     pub fn new(id: Uuid, kind: TileKind, rect: Rect) -> Self {
         Self { id, kind, rect }
+    }
+}
+
+/// A gutter is a position on the side of a window.
+/// They can also be iterated, to scan through windows parallel to the current one along on the associated side.
+#[derive(Copy, Clone, Debug)]
+pub struct Gutter<'a> {
+    pub current_id: Uuid,
+    pub graph: &'a Graph,
+    pub side: Cardinal,
+    pub iter_direction: Sign,
+}
+
+impl<'a> Gutter<'a> {
+    pub fn new(graph: &'a Graph, start_id: Uuid, side: Cardinal, iter_direction: Sign) -> Self {
+        Self {
+            current_id: start_id,
+            graph,
+            side,
+            iter_direction,
+        }
+    }
+
+    pub fn rev(self) -> Self {
+        let mut result = self;
+        result.iter_direction = !self.iter_direction;
+        result
+    }
+
+    pub fn jump(&mut self, direction: Cardinal) -> Option<Uuid> {
+        let neighbours = &self.graph.intra_surface_neighbourhoods[&self.current_id][direction];
+        let result = if self.iter_direction == Positive {
+            neighbours.first()
+        } else {
+            neighbours.last()
+        };
+
+        if let Some(&id) = result {
+            self.current_id = id;
+            self.side = !direction;
+            Some(id)
+        } else {
+            None
+        }
+    }
+}
+
+impl Iterator for Gutter<'_> {
+    type Item = Uuid;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let location = self.graph.tiles[&self.current_id]
+            .rect
+            .get_side_location(self.side);
+        let searchDirection = Cardinal {
+            axis: !self.side.axis,
+            sign: self.iter_direction,
+        };
+        let result = self.graph.intra_surface_neighbourhoods[&self.current_id][searchDirection]
+            .iter()
+            .find(|id| {
+                let tile = self.graph.tiles[id];
+                tile.kind == TileKind::Window && tile.rect.get_side_location(self.side) == location
+            });
+        if let Some(&id) = result {
+            self.current_id = id;
+            Some(id)
+        } else {
+            None
+        }
     }
 }
 
@@ -259,129 +334,24 @@ impl Graph {
         }
 
         // todo: should this actually be an oriented container?
-        if let Some(transform_container) =
-            self.build_transform_fragment(target_id, direction, strategy)?
+        if let Some(container) = self.build_transform_container(target_id, direction, strategy)
         {
-            let segment_count = transform_container.lines.len();
-            if transform_container.terminal_line.is_some() {
-                segment_count += 1;
-            }
-
-            // todo:n
+            // todo
         } else {
             Ok(self.tiles[target_id].rect)
         }
     }
 
-    /// resolves the tile's position along the axis parallel to that side
-    fn resolve_side_location(&self, tile_id: &Uuid, side: Cardinal) -> i32 {
-        let rect = &self.tiles[tile_id].rect;
-        match side {
-            Cardinal {
-                axis: X,
-                sign: Negative,
-            } => rect.x,
-            Cardinal {
-                axis: X,
-                sign: Positive,
-            } => rect.x + rect.width,
-            Cardinal {
-                axis: Y,
-                sign: Negative,
-            } => rect.y,
-            Cardinal {
-                axis: Y,
-                sign: Positive,
-            } => rect.y + rect.height,
-        }
-    }
-
-    /// looks for the last in the line of windows on the `neighbour_direction` side of the reference,
-    /// which are parallel along the perpendicular side with sign `sign=parallel_sign` (not both sides).
-    /// E.g. if `neighbour_direction=NORTH` and `parallel_sign=Negative` it will scan tiles that are:
-    /// - to the north of the reference and,
-    /// - parallel to the reference on the eastern side.
-    /// Note: the reference tile does not need to be a window, it can be a surface.
-    fn furthest_parallel_window(
-        &self,
-        reference_window_id: &Uuid,
-        neighbour_direction: Cardinal,
-        parallel_side_sign: Sign,
-    ) -> Uuid {
-        debug_assert!(self.tiles[&reference_window_id].kind == TileKind::Window);
-        let mut result = reference_window_id;
-        let alignment_side = Cardinal {
-            axis: !neighbour_direction.axis,
-            sign: parallel_side_sign,
-        };
-        let pos = self.resolve_side_location(result, alignment_side);
-
-        while let Some(next_id) = &self.intra_surface_neighbourhoods[result][neighbour_direction]
-            .iter()
-            .find(|id| {
-                self.tiles[id].kind != TileKind::Surface
-                    && self.resolve_side_location(id, alignment_side) == pos
-            })
-        {
-            result = next_id;
-        }
-
-        *result
-    }
-
-    /// looks for the one neighbour of the reference window (id=`reference_id`) which is:
-    /// - on the `reference_side` side of the reference and
-    /// - parallel to the reference on the perpendicular side with `sign=parallel_sign` (not both sides).
-    /// E.g. if `reference_side=NORTH` and `parallel_sign=Negative` it will search for a tile which is:
-    /// - to the north of the reference and,
-    /// - parallel to the reference on the eastern side.
-    /// Notes:
-    /// - This only considers intra-surface neighbourhoods
-    fn next_parallel_window(
-        &self,
-        reference_window_id: &Uuid,
-        neighbour_direction: Cardinal,
-        parallel_side_sign: Sign,
-    ) -> Option<Uuid> {
-        debug_assert!(self.tiles[&reference_window_id].kind == TileKind::Window);
-        let alignment_side = Cardinal {
-            axis: !neighbour_direction.axis,
-            sign: parallel_side_sign,
-        };
-        let pos = self.resolve_side_location(reference_window_id, alignment_side);
-        self.intra_surface_neighbourhoods[reference_window_id][neighbour_direction]
-            .iter()
-            .find(|id| {
-                self.tiles[id].kind == TileKind::Window
-                    && self.resolve_side_location(id, alignment_side) == pos
-            })
-            .copied()
-    }
     /// note: a and b must be supplied in order along the cross axis of the given side or this fails
-    fn are_cleanly_connected(
-        &self,
-        negative_window_id: &Uuid,
-        positive_window_id: &Uuid,
-        parallel_side: Cardinal,
-    ) -> bool {
-        let line_direction = Cardinal {
-            axis: !parallel_side.axis,
+    fn are_cleanly_connected(&self, a: &Uuid, b: &Uuid, connected_side: Cardinal) -> bool {
+        let scan_direction = Cardinal {
+            axis: !connected_side.axis,
             sign: Positive,
         };
-        let end_position = self.resolve_side_location(positive_window_id, parallel_side);
-        let mut current = *negative_window_id;
-        let mut current_position = self.resolve_side_location(&current, parallel_side);
-
-        while &current != positive_window_id && current_position < end_position {
-            if let Some(next) =
-                self.next_parallel_window(&current, line_direction, parallel_side.sign)
-            {
-                current = next;
-                current_position = self.resolve_side_location(&current, parallel_side);
-            }
-        }
-
-        current_position == end_position
+        let end_location = self.tiles[&b].rect.get_side_location(scan_direction);
+        Gutter::new(self, *a, connected_side, Positive)
+            .take_while(|id| self.tiles[id].rect.get_side_location(scan_direction) <= end_location)
+            .any(|id| id == *b)
     }
 
     /// this is the method you'd generally use when inserting windows (unsure what strategy to employ for removals yet)
@@ -393,107 +363,93 @@ impl Graph {
     ) -> Option<TransformContainer> {
         debug_assert!(self.tiles.contains_key(reference_tile_id));
         let (cross_neg, cross_pos) = reference_side.perpendicular_directions();
-        let mut negative_reference_id: Uuid;
-        let mut positive_reference_id: Uuid;
-        match strategy {
-            TransformStrategy::Maximal => {
-                negative_reference_id = self.furthest_parallel_window(
-                    reference_tile_id,
-                    cross_neg,
-                    reference_side.sign,
-                );
-                positive_reference_id = self.furthest_parallel_window(
-                    reference_tile_id,
-                    cross_pos,
-                    reference_side.sign,
-                );
-            }
-            TransformStrategy::Minimal => {
-                negative_reference_id = *reference_tile_id;
-                positive_reference_id = *reference_tile_id;
-            }
-            TransformStrategy::OutwardMinimal => {
-                negative_reference_id = *reference_tile_id;
-                positive_reference_id = *reference_tile_id;
-                // by definition if there's nothing parallel in one direction there must be something parallel in on the other axis for the same corner
-                // this recovery logic is needed if we are moving strictly away from a window (e.g. to move it's edge in closer or further away from its center)
-                // but we might make it configurable
-                while self
-                    .next_parallel_window(&negative_reference_id, reference_side, Negative)
-                    .is_none()
-                    && let Some(next) = self.next_parallel_window(
-                        &negative_reference_id,
-                        cross_neg,
-                        reference_side.sign,
-                    )
-                {
-                    negative_reference_id = next;
+        let mut neg_reference_id = *reference_tile_id;
+        let mut pos_reference_id = *reference_tile_id;
+        if strategy != TransformStrategy::Minimal {
+            let cross_gutter = Gutter::new(self, *reference_tile_id, reference_side, Positive);
+            match strategy {
+                TransformStrategy::Maximal => {
+                    if let Some(id) = cross_gutter.rev().last() {
+                        neg_reference_id = id;
+                    }
+                    if let Some(id) = cross_gutter.last() {
+                        pos_reference_id = id;
+                    }
                 }
-                while self
-                    .next_parallel_window(&positive_reference_id, reference_side, Positive)
-                    .is_none()
-                    && let Some(next) = self.next_parallel_window(
-                        &positive_reference_id,
-                        cross_pos,
-                        reference_side.sign,
-                    )
-                {
-                    positive_reference_id = next;
+                TransformStrategy::OutwardMinimal => {
+                    if let Some(id) = std::iter::once(*reference_tile_id)
+                        .chain(cross_gutter.rev())
+                        .find(|id| {
+                            Gutter::new(self, *id, cross_neg, reference_side.sign)
+                                .next()
+                                .is_some()
+                        })
+                    {
+                        neg_reference_id = id;
+                    }
+                    if let Some(id) = std::iter::once(*reference_tile_id)
+                        .chain(cross_gutter)
+                        .find(|id| {
+                            Gutter::new(self, *id, cross_pos, reference_side.sign)
+                                .next()
+                                .is_some()
+                        })
+                    {
+                        pos_reference_id = id;
+                    }
                 }
+                _ => panic!(),
             }
         }
 
-        let maybe_outward = if let (Some(initial_negative), Some(initial_positive)) = (
-            self.next_parallel_window(&negative_reference_id, reference_side, Negative),
-            self.next_parallel_window(&positive_reference_id, reference_side, Positive),
-        ) {
-            Some(self.build_transform_fragment(
-                initial_negative,
-                initial_positive,
-                reference_side,
-            ))
+        let maybe_backward_fragment = if self.tiles[reference_tile_id].kind == TileKind::Window {
+            Some(self.build_transform_fragment(neg_reference_id, pos_reference_id, !reference_side))
         } else {
             None
         };
 
-        let maybe_inward = if self.tiles[reference_tile_id].kind == TileKind::Window {
-            Some(self.build_transform_fragment(
-                positive_reference_id,
-                negative_reference_id,
-                !reference_side,
-            ))
-        } else {
-            None
+        let maybe_forward_fragment = {
+            let initial_neg =
+                Gutter::new(self, neg_reference_id, cross_neg, reference_side.sign).next();
+            let initial_pos =
+                Gutter::new(self, pos_reference_id, cross_pos, reference_side.sign).next();
+            match (initial_neg, initial_pos) {
+                (Some(initial_neg_id), Some(initial_pos_id)) => Some(
+                    self.build_transform_fragment(initial_neg_id, initial_pos_id, reference_side),
+                ),
+                _ => None,
+            }
         };
 
-        match (maybe_outward, maybe_inward) {
+        // the rest of this is just normalising the above backward/forward parts to collapse intermediate Nones and arranged them in natural order
+        match (maybe_backward_fragment, maybe_forward_fragment) {
             (None, None) => None,
             some => {
                 let content = match some {
-                    (Some(outward), None) => {
-                        if reference_side.sign == Negative {
-                            TransformContent::Negative(outward)
+                    (None, Some(forward)) => {
+                        if reference_side.sign == Positive {
+                            TransformContent::Positive(forward)
                         } else {
-                            TransformContent::Positive(outward)
+                            TransformContent::Negative(forward)
                         }
-                    },
-                    (None, Some(inward)) => {
-                        if reference_side.sign == Negative {
-                            TransformContent::Positive(inward)
-                        } else {
+                    }
+                    (Some(inward), None) => {
+                        if reference_side.sign == Positive {
                             TransformContent::Negative(inward)
-                        }
-                    },
-                    (Some(outward), Some(inward)) => {
-                        if reference_side.sign == Negative {
-                            TransformContent::Bidirectional(outward, inward)
                         } else {
-                            TransformContent::Bidirectional(inward, outward)
+                            TransformContent::Positive(inward)
                         }
-                    },
+                    }
+                    (Some(inward), Some(outward)) => {
+                        if reference_side.sign == Positive {
+                            TransformContent::Bidirectional(inward, outward)
+                        } else {
+                            TransformContent::Bidirectional(outward, inward)
+                        }
+                    }
                     _ => panic!(),
                 };
-                Some(TransformContainer{
+                Some(TransformContainer {
                     axis: reference_side.axis,
                     content,
                 })
@@ -505,60 +461,53 @@ impl Graph {
     ///     in a clean parallel line on the side opposite to the direction we are building in.
     fn build_transform_fragment(
         &self,
-        negative_start_id: Uuid,
-        positive_start_id: Uuid,
-        direction: Cardinal,
+        neg_start_id: Uuid,
+        pos_start_id: Uuid,
+        build_direction: Cardinal,
     ) -> TransformFragment {
-        debug_assert!(self.tiles[&negative_start_id].kind == TileKind::Window);
-        debug_assert!(self.tiles[&positive_start_id].kind == TileKind::Window);
-        assert!(self.are_cleanly_connected(&negative_start_id, &positive_start_id, direction));
+        debug_assert!(self.tiles[&neg_start_id].kind == TileKind::Window);
+        debug_assert!(self.tiles[&pos_start_id].kind == TileKind::Window);
+        assert!(self.are_cleanly_connected(&neg_start_id, &pos_start_id, build_direction));
+        let (cross_neg, cross_pos) = build_direction.perpendicular_directions();
         let mut dividers = Vec::new();
-        let mut negative_id: Uuid = negative_start_id;
-        let mut positive_id: Uuid = positive_start_id;
-        // note: this checks for a clean connection on the side of the direction we are building in
-        // which is not the same as the expected clean line on opposite side
-        let mut connected_cleanly =
-            self.are_cleanly_connected(&negative_id, &positive_id, direction);
+        let mut neg_gutter = Gutter::new(self, neg_start_id, cross_neg, build_direction.sign)
+            .map(|id| (id, self.tiles[&id].rect.get_side_location(build_direction)));
+        let mut pos_gutter = Gutter::new(self, pos_start_id, cross_pos, build_direction.sign)
+            .map(|id| (id, self.tiles[&id].rect.get_side_location(build_direction)));
+        let mut neg_id: Uuid = neg_start_id;
+        let mut pos_id: Uuid = pos_start_id;
 
-        while let (Some(next_negative), Some(next_positive)) = (
-            self.next_parallel_window(&negative_id, direction, Negative),
-            self.next_parallel_window(&positive_id, direction, Positive),
-        ) {
-            if connected_cleanly {
-                dividers.push((negative_id, positive_id));
+        while let (Some(next_neg), Some(next_pos)) = (neg_gutter.next(), pos_gutter.next()) {
+            if self.are_cleanly_connected(&neg_id, &pos_id, build_direction) {
+                dividers.push((neg_id, pos_id));
             }
+            let mut neg_location;
+            let mut pos_location;
 
-            negative_id = next_negative;
-            positive_id = next_positive;
-            let mut negative_location = self.resolve_side_location(&negative_id, direction);
-            let mut positive_location = self.resolve_side_location(&positive_id, direction);
+            (neg_id, neg_location) = next_neg;
+            (pos_id, pos_location) = next_pos;
 
-            while negative_location != positive_location {
-                if negative_location < positive_location {
-                    if let Some(id) = self.next_parallel_window(&negative_id, direction, Negative) {
-                        negative_id = id;
-                        negative_location = self.resolve_side_location(&negative_id, direction);
+            while neg_location != pos_location {
+                if neg_location < pos_location {
+                    if let Some(next_neg) = neg_gutter.next() {
+                        (neg_id, neg_location) = next_neg;
                     } else {
                         break;
                     }
-                } else if negative_location > positive_location {
-                    if let Some(id) = self.next_parallel_window(&positive_id, direction, Positive) {
-                        positive_id = id;
-                        positive_location = self.resolve_side_location(&positive_id, direction);
+                } else if neg_location > pos_location {
+                    if let Some(next_pos) = pos_gutter.next() {
+                        (pos_id, pos_location) = next_pos;
                     } else {
                         break;
                     }
                 }
             }
-
-            connected_cleanly = negative_location == positive_location
-                && self.are_cleanly_connected(&negative_id, &positive_id, direction);
         }
 
         TransformFragment {
-            start: (negative_start_id, positive_start_id),
+            start: (neg_start_id, pos_start_id),
             dividers,
-            end: (negative_id, positive_id),
+            end: (neg_id, pos_id),
         }
     }
 }

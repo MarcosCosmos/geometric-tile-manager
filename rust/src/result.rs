@@ -1,5 +1,5 @@
 use std::fmt;
-use std::fmt::{write, Formatter};
+use std::fmt::{Formatter, write};
 use uuid::Uuid;
 #[derive(Debug)]
 pub enum Error {
@@ -16,12 +16,15 @@ impl fmt::Display for Error {
         match self {
             Error::TileNotFound(id) => {
                 write!(f, "No tile found with with id: {id}")
-            },
+            }
             Error::TileAlreadyExists(id) => {
                 write!(f, "A tile already exists with id: {id}")
-            },
+            }
             Error::NothingToTransform => {
-                write!(f, "There is no space to perform an oriented transform here (are you trying to expand outside the bounds of a surface?)")
+                write!(
+                    f,
+                    "There is no space to perform an oriented transform here (are you trying to expand outside the bounds of a surface?)"
+                )
             }
         }
     }

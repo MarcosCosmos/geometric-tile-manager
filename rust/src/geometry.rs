@@ -1,7 +1,7 @@
-use std::cmp::Ordering;
-use std::ops::{Index, Not};
 use crate::geometry::Axis::{X, Y};
 use crate::geometry::Sign::{Negative, Positive};
+use std::cmp::Ordering;
+use std::ops::{Index, Not};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Point {
@@ -49,14 +49,9 @@ pub struct Rect {
     pub height: i32,
 }
 
-/// a directed version of a rect meant to help compare positions with respect to a direction
-/// this helps simplify directed operations like inserts
-#[derive(Copy, Clone, Debug)]
-pub struct DirectedRect(pub Rect, pub Cardinal);
-
 impl Point {
     pub fn new(x: i32, y: i32) -> Self {
-        Self { x, y}
+        Self { x, y }
     }
 }
 
@@ -70,15 +65,15 @@ impl Index<Axis> for Point {
     }
 }
 
-impl Index<Axis> for Diagonal {
-    type Output = Sign;
-    fn index(&self, index: Axis) -> &Self::Output {
-        match index {
-            X => &self.x,
-            Y => &self.y,
-        }
-    }
-}
+// impl Index<Axis> for Diagonal {
+//     type Output = Sign;
+//     fn index(&self, index: Axis) -> &Self::Output {
+//         match index {
+//             X => &self.x,
+//             Y => &self.y,
+//         }
+//     }
+// }
 
 impl Cardinal {
     // /// as in the corners associated with this direction's the side of a box
@@ -98,8 +93,14 @@ impl Cardinal {
     pub fn perpendicular_directions(&self) -> (Cardinal, Cardinal) {
         let axis = !self.axis;
         (
-            Cardinal { axis, sign: Negative },
-            Cardinal { axis, sign: Positive },
+            Cardinal {
+                axis,
+                sign: Negative,
+            },
+            Cardinal {
+                axis,
+                sign: Positive,
+            },
         )
     }
 
@@ -119,11 +120,36 @@ impl Cardinal {
     }
 }
 
-impl Diagonal {
-    /// as in the sides associated with the corner of a box.
-    /// The result is always axis align, i.e. (x, y)
-    pub fn adjacent_cardinals(&self) -> (Cardinal, Cardinal) {
-        (Cardinal { axis: X, sign: self.x }, Cardinal { axis: Y, sign: self.y })
+// impl Diagonal {
+//     /// as in the sides associated with the corner of a box.
+//     /// The result is always axis align, i.e. (x, y)
+//     pub fn adjacent_cardinals(&self) -> (Cardinal, Cardinal) {
+//         (Cardinal { axis: X, sign: self.x }, Cardinal { axis: Y, sign: self.y })
+//     }
+// }
+
+impl Rect {
+    /// returns the position of the given side of the rect along the axis perpendicular to it's length
+    /// (this being the only axis for which there is one value and not two for that side)
+    pub fn get_side_location(&self, side: Cardinal) -> i32 {
+        match side {
+            Cardinal {
+                axis: X,
+                sign: Negative,
+            } => self.x,
+            Cardinal {
+                axis: X,
+                sign: Positive,
+            } => self.x + self.width,
+            Cardinal {
+                axis: Y,
+                sign: Negative,
+            } => self.y,
+            Cardinal {
+                axis: Y,
+                sign: Positive,
+            } => self.y + self.height,
+        }
     }
 }
 
@@ -157,19 +183,19 @@ impl Not for Cardinal {
     }
 }
 
-impl Not for Diagonal {
-    type Output = Self;
-    fn not(self) -> Self::Output {
-        Self {
-            x: !self.x,
-            y: !self.y,
-        }
-    }
-}
+// impl Not for Diagonal {
+//     type Output = Self;
+//     fn not(self) -> Self::Output {
+//         Self {
+//             x: !self.x,
+//             y: !self.y,
+//         }
+//     }
+// }
 
 pub const NORTH: Cardinal = Cardinal {
- axis: Y,
- sign: Negative,
+    axis: Y,
+    sign: Negative,
 };
 pub const SOUTH: Cardinal = Cardinal {
     axis: Y,
