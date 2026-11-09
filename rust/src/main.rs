@@ -1,5 +1,6 @@
 pub mod geometry;
 pub mod graph;
+mod navigation;
 mod result;
 mod transform;
 

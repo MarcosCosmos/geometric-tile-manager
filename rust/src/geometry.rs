@@ -151,6 +151,13 @@ impl Rect {
             } => self.y + self.height,
         }
     }
+
+    pub fn get_center(&self, axis: Axis) -> i32 {
+        match axis {
+            X => self.x + (self.width / 2),
+            Y => self.y + (self.height / 2),
+        }
+    }
 }
 
 impl Not for Axis {

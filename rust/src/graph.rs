@@ -1,4 +1,6 @@
+use crate::navigation::{peek_gutter, Navigator, GutterNav, RawNavigator, NavIter};
 use crate::geometry::{Axis::*, Cardinal, Rect, Sign, Sign::*};
+use crate::navigation::{Cursor, Nav};
 use crate::result::{Error, Result};
 use crate::transform::{
     TransformContainer, TransformContent, TransformFragment, TransformStrategy,
@@ -37,13 +39,13 @@ struct Neighbourhood {
 /// - Storing tiles seperately from neighboy
 #[derive(Clone, Debug, Default)]
 pub struct Graph {
-    tiles: HashMap<Uuid, Tile>,
+    pub tiles: HashMap<Uuid, Tile>,
     /// Note: each surface has an entry in its own interior neighbourhood.
     /// The meaning of direction is semi-inverted in that the surface's edges face inwards not outwards, but directionality is otherwise the same.
     /// E.g. the eastern neighbourhood of a surface faces inwardly east from the western side, whereas a normal window would face outwardly east from the eastern side.
-    intra_surface_neighbourhoods: HashMap<Uuid, Neighbourhood>,
+    pub intra_surface_neighbourhoods: HashMap<Uuid, Neighbourhood>,
     /// inter_surface_neighbours are the neighbourhoods between surfaces, and therefore face outwards.
-    inter_surface_neighbourhoods: HashMap<Uuid, Neighbourhood>,
+    pub inter_surface_neighbourhoods: HashMap<Uuid, Neighbourhood>,
 }
 
 impl Neighbourhood {
@@ -123,76 +125,6 @@ impl IndexMut<Cardinal> for Neighbourhood {
 impl Tile {
     pub fn new(id: Uuid, kind: TileKind, rect: Rect) -> Self {
         Self { id, kind, rect }
-    }
-}
-
-/// A gutter is a position on the side of a window.
-/// They can also be iterated, to scan through windows parallel to the current one along on the associated side.
-#[derive(Copy, Clone, Debug)]
-pub struct Gutter<'a> {
-    pub current_id: Uuid,
-    pub graph: &'a Graph,
-    pub side: Cardinal,
-    pub iter_direction: Sign,
-}
-
-impl<'a> Gutter<'a> {
-    pub fn new(graph: &'a Graph, start_id: Uuid, side: Cardinal, iter_direction: Sign) -> Self {
-        Self {
-            current_id: start_id,
-            graph,
-            side,
-            iter_direction,
-        }
-    }
-
-    pub fn rev(self) -> Self {
-        let mut result = self;
-        result.iter_direction = !self.iter_direction;
-        result
-    }
-
-    pub fn jump(&mut self, direction: Cardinal) -> Option<Uuid> {
-        let neighbours = &self.graph.intra_surface_neighbourhoods[&self.current_id][direction];
-        let result = if self.iter_direction == Positive {
-            neighbours.first()
-        } else {
-            neighbours.last()
-        };
-
-        if let Some(&id) = result {
-            self.current_id = id;
-            self.side = !direction;
-            Some(id)
-        } else {
-            None
-        }
-    }
-}
-
-impl Iterator for Gutter<'_> {
-    type Item = Uuid;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let location = self.graph.tiles[&self.current_id]
-            .rect
-            .get_side_location(self.side);
-        let searchDirection = Cardinal {
-            axis: !self.side.axis,
-            sign: self.iter_direction,
-        };
-        let result = self.graph.intra_surface_neighbourhoods[&self.current_id][searchDirection]
-            .iter()
-            .find(|id| {
-                let tile = self.graph.tiles[id];
-                tile.kind == TileKind::Window && tile.rect.get_side_location(self.side) == location
-            });
-        if let Some(&id) = result {
-            self.current_id = id;
-            Some(id)
-        } else {
-            None
-        }
     }
 }
 
@@ -334,8 +266,7 @@ impl Graph {
         }
 
         // todo: should this actually be an oriented container?
-        if let Some(container) = self.build_transform_container(target_id, direction, strategy)
-        {
+        if let Some(container) = self.build_transform_container(target_id, direction, strategy) {
             // todo
         } else {
             Ok(self.tiles[target_id].rect)
@@ -349,7 +280,7 @@ impl Graph {
             sign: Positive,
         };
         let end_location = self.tiles[&b].rect.get_side_location(scan_direction);
-        Gutter::new(self, *a, connected_side, Positive)
+        GutterNav::new(self, *a, connected_side).iter(Positive)
             .take_while(|id| self.tiles[id].rect.get_side_location(scan_direction) <= end_location)
             .any(|id| id == *b)
     }
@@ -366,32 +297,30 @@ impl Graph {
         let mut neg_reference_id = *reference_tile_id;
         let mut pos_reference_id = *reference_tile_id;
         if strategy != TransformStrategy::Minimal {
-            let cross_gutter = Gutter::new(self, *reference_tile_id, reference_side, Positive);
+            let nav = GutterNav::new(self, *reference_tile_id, reference_side);
             match strategy {
                 TransformStrategy::Maximal => {
-                    if let Some(id) = cross_gutter.rev().last() {
+                    if let Some(id) = nav.iter(Negative).last() {
                         neg_reference_id = id;
                     }
-                    if let Some(id) = cross_gutter.last() {
+                    if let Some(id) = nav.iter(Positive).last() {
                         pos_reference_id = id;
                     }
                 }
                 TransformStrategy::OutwardMinimal => {
                     if let Some(id) = std::iter::once(*reference_tile_id)
-                        .chain(cross_gutter.rev())
+                        .chain(nav.iter(Negative))
                         .find(|id| {
-                            Gutter::new(self, *id, cross_neg, reference_side.sign)
-                                .next()
+                            GutterNav::next_raw(self, *id, cross_neg, reference_side.sign)
                                 .is_some()
                         })
                     {
                         neg_reference_id = id;
                     }
                     if let Some(id) = std::iter::once(*reference_tile_id)
-                        .chain(cross_gutter)
+                        .chain(nav.iter(Positive))
                         .find(|id| {
-                            Gutter::new(self, *id, cross_pos, reference_side.sign)
-                                .next()
+                           GutterNav::next_raw(self, *id, cross_pos, reference_side.sign)
                                 .is_some()
                         })
                     {
@@ -410,9 +339,9 @@ impl Graph {
 
         let maybe_forward_fragment = {
             let initial_neg =
-                Gutter::new(self, neg_reference_id, cross_neg, reference_side.sign).next();
+                GutterNav::next_raw(self, neg_reference_id, cross_neg, reference_side.sign);
             let initial_pos =
-                Gutter::new(self, pos_reference_id, cross_pos, reference_side.sign).next();
+                GutterNav::next_raw(self, pos_reference_id, cross_pos, reference_side.sign);
             match (initial_neg, initial_pos) {
                 (Some(initial_neg_id), Some(initial_pos_id)) => Some(
                     self.build_transform_fragment(initial_neg_id, initial_pos_id, reference_side),
@@ -470,14 +399,16 @@ impl Graph {
         assert!(self.are_cleanly_connected(&neg_start_id, &pos_start_id, build_direction));
         let (cross_neg, cross_pos) = build_direction.perpendicular_directions();
         let mut dividers = Vec::new();
-        let mut neg_gutter = Gutter::new(self, neg_start_id, cross_neg, build_direction.sign)
+        let mut neg_iter = GutterNav::new(self, neg_start_id, cross_neg)
+            .iter(build_direction.sign)
             .map(|id| (id, self.tiles[&id].rect.get_side_location(build_direction)));
-        let mut pos_gutter = Gutter::new(self, pos_start_id, cross_pos, build_direction.sign)
+        let mut pos_iter = GutterNav::new(self, pos_start_id, cross_pos)
+            .iter(build_direction.sign)
             .map(|id| (id, self.tiles[&id].rect.get_side_location(build_direction)));
         let mut neg_id: Uuid = neg_start_id;
         let mut pos_id: Uuid = pos_start_id;
 
-        while let (Some(next_neg), Some(next_pos)) = (neg_gutter.next(), pos_gutter.next()) {
+        while let (Some(next_neg), Some(next_pos)) = (neg_iter.next(), pos_iter.next()) {
             if self.are_cleanly_connected(&neg_id, &pos_id, build_direction) {
                 dividers.push((neg_id, pos_id));
             }
@@ -489,13 +420,13 @@ impl Graph {
 
             while neg_location != pos_location {
                 if neg_location < pos_location {
-                    if let Some(next_neg) = neg_gutter.next() {
+                    if let Some(next_neg) = neg_iter.next() {
                         (neg_id, neg_location) = next_neg;
                     } else {
                         break;
                     }
                 } else if neg_location > pos_location {
-                    if let Some(next_pos) = pos_gutter.next() {
+                    if let Some(next_pos) = pos_iter.next() {
                         (pos_id, pos_location) = next_pos;
                     } else {
                         break;
