@@ -285,33 +285,32 @@ impl Graph {
         match strategy {
             TransformStrategy::Minimal => {},
             TransformStrategy::Maximal => {
-                if let Some(id) = gutter.start().iter(self, Negative).last() {
+                if let Some(id) = gutter.start().iter(self, Negative).ids().last() {
                     gutter.start_id = id;
                 }
-                if let Some(id) = gutter.end().iter(self, Positive).last() {
+                if let Some(id) = gutter.end().iter(self, Positive).ids().last() {
                     gutter.end_id = id;
                 }
             }
             TransformStrategy::OutwardMinimal => {
-                if let Some(id) = gutter.start().iter(self, Negative)
-                    .find(|&id| {
-                        Gutter::next(self, Cursor::new(id, cross_neg), gutter.side.sign)
+                if let Some(c) = gutter.start().iter(self, Negative)
+                    .find(|c| {
+                        Gutter::next(self, c.face(cross_neg), gutter.side.sign)
                             .is_some()
                     })
                 {
-                    gutter.start_id = id;
+                    gutter.start_id = c.tile_id;
                 }
-                if let Some(id) = gutter.end().iter(self, Positive)
-                    .find(|&id| {
-                        Gutter::next(self, Cursor::new(id, cross_pos), gutter.side.sign)
+                if let Some(c) = gutter.end().iter(self, Positive)
+                    .find(|c| {
+                        Gutter::next(self, c.face(cross_pos), gutter.side.sign)
                             .is_some()
                     })
                 {
-                    gutter.end_id = id;
+                    gutter.end_id = c.tile_id;
                 }
             }
         }
-
     }
 
     /// this is the method you'd generally use when inserting windows (unsure what strategy to employ for removals yet)
@@ -326,12 +325,12 @@ impl Graph {
         let inward_fragment = self.build_transform_fragment(gutter);
 
         let maybe_outward_fragment = {
-            let initial_neg = gutter.start().iter(self, gutter.side.sign).next();
+            let initial_neg = Gutter::next(self, gutter.start(), gutter.side.sign);
             let initial_pos =
                 Gutter::next(self, gutter.end(), gutter.side.sign);
             match (initial_neg, initial_pos) {
                 (Some(neg), Some(pos)) => {Some(
-                    self.build_transform_fragment(Gutter::new(neg, pos, !gutter.side)),
+                    self.build_transform_fragment(Gutter::new(neg.tile_id, pos.tile_id, !gutter.side)),
                 )},
                 _ => None,
             }
@@ -377,10 +376,10 @@ impl Graph {
         let mut dividers = Vec::new();
         let mut neg_iter = Cursor::new(gutter.start_id, cross_neg)
             .iter(self, build_direction.sign)
-            .map(|id| (id, self.location(Cursor::new(id, build_direction))));
+            .map(|c| (c.tile_id, self.location(c.face(build_direction))));
         let mut pos_iter = Cursor::new(gutter.end_id, cross_pos)
             .iter(self, build_direction.sign)
-            .map(|id| (id, self.location(Cursor::new(id, build_direction))));
+            .map(|c| (c.tile_id, self.location(c.face(build_direction))));
 
         let mut neg_id = gutter.start_id;
         let mut pos_id = gutter.end_id;
