@@ -1,4 +1,4 @@
-use crate::navigation::{peek_gutter, Navigator, GutterNav, RawNavigator, NavIter};
+use crate::navigation::{GutterIter, Gutter, IterExt};
 use crate::geometry::{Axis::*, Cardinal, Rect, Sign, Sign::*};
 use crate::navigation::{Cursor, Nav};
 use crate::result::{Error, Result};
@@ -273,150 +273,127 @@ impl Graph {
         }
     }
 
-    /// note: a and b must be supplied in order along the cross axis of the given side or this fails
-    fn are_cleanly_connected(&self, a: &Uuid, b: &Uuid, connected_side: Cardinal) -> bool {
-        let scan_direction = Cardinal {
-            axis: !connected_side.axis,
-            sign: Positive,
-        };
-        let end_location = self.tiles[&b].rect.get_side_location(scan_direction);
-        GutterNav::new(self, *a, connected_side).iter(Positive)
-            .take_while(|id| self.tiles[id].rect.get_side_location(scan_direction) <= end_location)
-            .any(|id| id == *b)
+
+
+    pub fn location(&self, cursor: Cursor) -> i32 {
+        self.tiles[&cursor.tile_id].rect.get_side_location(cursor.side)
     }
 
-    /// this is the method you'd generally use when inserting windows (unsure what strategy to employ for removals yet)
-    fn build_transform_container(
-        &self,
-        reference_tile_id: &Uuid,
-        reference_side: Cardinal,
-        strategy: TransformStrategy,
-    ) -> Option<TransformContainer> {
-        debug_assert!(self.tiles.contains_key(reference_tile_id));
-        let (cross_neg, cross_pos) = reference_side.perpendicular_directions();
-        let mut neg_reference_id = *reference_tile_id;
-        let mut pos_reference_id = *reference_tile_id;
-        if strategy != TransformStrategy::Minimal {
-            let nav = GutterNav::new(self, *reference_tile_id, reference_side);
-            match strategy {
-                TransformStrategy::Maximal => {
-                    if let Some(id) = nav.iter(Negative).last() {
-                        neg_reference_id = id;
-                    }
-                    if let Some(id) = nav.iter(Positive).last() {
-                        pos_reference_id = id;
-                    }
+    // a helper for normalising gutters that may only be partially defined for a given purpose
+    fn normalize_gutter(&self, gutter: &mut Gutter, strategy: TransformStrategy) {
+        let (cross_neg, cross_pos) = gutter.side.perpendicular_directions();
+        match strategy {
+            TransformStrategy::Minimal => {},
+            TransformStrategy::Maximal => {
+                if let Some(id) = gutter.start().iter(self, Negative).last() {
+                    gutter.start_id = id;
                 }
-                TransformStrategy::OutwardMinimal => {
-                    if let Some(id) = std::iter::once(*reference_tile_id)
-                        .chain(nav.iter(Negative))
-                        .find(|id| {
-                            GutterNav::next_raw(self, *id, cross_neg, reference_side.sign)
-                                .is_some()
-                        })
-                    {
-                        neg_reference_id = id;
-                    }
-                    if let Some(id) = std::iter::once(*reference_tile_id)
-                        .chain(nav.iter(Positive))
-                        .find(|id| {
-                           GutterNav::next_raw(self, *id, cross_pos, reference_side.sign)
-                                .is_some()
-                        })
-                    {
-                        pos_reference_id = id;
-                    }
+                if let Some(id) = gutter.end().iter(self, Positive).last() {
+                    gutter.end_id = id;
                 }
-                _ => panic!(),
+            }
+            TransformStrategy::OutwardMinimal => {
+                if let Some(id) = gutter.start().iter(self, Negative)
+                    .find(|&id| {
+                        Gutter::next(self, Cursor::new(id, cross_neg), gutter.side.sign)
+                            .is_some()
+                    })
+                {
+                    gutter.start_id = id;
+                }
+                if let Some(id) = gutter.end().iter(self, Positive)
+                    .find(|&id| {
+                        Gutter::next(self, Cursor::new(id, cross_pos), gutter.side.sign)
+                            .is_some()
+                    })
+                {
+                    gutter.end_id = id;
+                }
             }
         }
 
-        let maybe_backward_fragment = if self.tiles[reference_tile_id].kind == TileKind::Window {
-            Some(self.build_transform_fragment(neg_reference_id, pos_reference_id, !reference_side))
-        } else {
-            None
-        };
+    }
 
-        let maybe_forward_fragment = {
-            let initial_neg =
-                GutterNav::next_raw(self, neg_reference_id, cross_neg, reference_side.sign);
+    /// this is the method you'd generally use when inserting windows (unsure what strategy to employ for removals yet)
+    /// only works if starting from a window, which is intended
+    fn build_transform_container(
+        &self,
+        gutter: Gutter
+    ) -> Option<TransformContainer> {
+        debug_assert!(gutter.is_connected(self));
+
+
+        let inward_fragment = self.build_transform_fragment(gutter);
+
+        let maybe_outward_fragment = {
+            let initial_neg = gutter.start().iter(self, gutter.side.sign).next();
             let initial_pos =
-                GutterNav::next_raw(self, pos_reference_id, cross_pos, reference_side.sign);
+                Gutter::next(self, gutter.end(), gutter.side.sign);
             match (initial_neg, initial_pos) {
-                (Some(initial_neg_id), Some(initial_pos_id)) => Some(
-                    self.build_transform_fragment(initial_neg_id, initial_pos_id, reference_side),
-                ),
+                (Some(neg), Some(pos)) => {Some(
+                    self.build_transform_fragment(Gutter::new(neg, pos, !gutter.side)),
+                )},
                 _ => None,
             }
         };
 
         // the rest of this is just normalising the above backward/forward parts to collapse intermediate Nones and arranged them in natural order
-        match (maybe_backward_fragment, maybe_forward_fragment) {
-            (None, None) => None,
-            some => {
-                let content = match some {
-                    (None, Some(forward)) => {
-                        if reference_side.sign == Positive {
-                            TransformContent::Positive(forward)
-                        } else {
-                            TransformContent::Negative(forward)
-                        }
-                    }
-                    (Some(inward), None) => {
-                        if reference_side.sign == Positive {
-                            TransformContent::Negative(inward)
-                        } else {
-                            TransformContent::Positive(inward)
-                        }
-                    }
-                    (Some(inward), Some(outward)) => {
-                        if reference_side.sign == Positive {
-                            TransformContent::Bidirectional(inward, outward)
-                        } else {
-                            TransformContent::Bidirectional(outward, inward)
-                        }
-                    }
-                    _ => panic!(),
-                };
-                Some(TransformContainer {
-                    axis: reference_side.axis,
-                    content,
-                })
+        let content = match maybe_outward_fragment {
+            (None) => {
+                if gutter.side.sign == Positive {
+                    TransformContent::Negative(inward_fragment)
+                } else {
+                    TransformContent::Positive(inward_fragment)
+                }
             }
-        }
+            Some(outward_fragment) => {
+                if gutter.side.sign == Positive {
+                    TransformContent::Bidirectional(inward_fragment, outward_fragment)
+                } else {
+                    TransformContent::Bidirectional(outward_fragment, inward_fragment)
+                }
+            }
+            _ => panic!(),
+        };
+
+        Some(TransformContainer {
+            axis: !gutter.side.axis,
+            content,
+        })
     }
 
     /// note: there is a strict contractual expectation that the starting window(s) are
     ///     in a clean parallel line on the side opposite to the direction we are building in.
     fn build_transform_fragment(
         &self,
-        neg_start_id: Uuid,
-        pos_start_id: Uuid,
-        build_direction: Cardinal,
+        gutter: Gutter
     ) -> TransformFragment {
-        debug_assert!(self.tiles[&neg_start_id].kind == TileKind::Window);
-        debug_assert!(self.tiles[&pos_start_id].kind == TileKind::Window);
-        assert!(self.are_cleanly_connected(&neg_start_id, &pos_start_id, build_direction));
+        debug_assert!(self.tiles[&gutter.start_id].kind == TileKind::Window);
+        debug_assert!(self.tiles[&gutter.end_id].kind == TileKind::Window);
+        // note: we're actually building in the direction opposit our valid gutter
+        assert!(gutter.is_connected(self));
+        let build_direction = !gutter.side;
         let (cross_neg, cross_pos) = build_direction.perpendicular_directions();
         let mut dividers = Vec::new();
-        let mut neg_iter = GutterNav::new(self, neg_start_id, cross_neg)
-            .iter(build_direction.sign)
-            .map(|id| (id, self.tiles[&id].rect.get_side_location(build_direction)));
-        let mut pos_iter = GutterNav::new(self, pos_start_id, cross_pos)
-            .iter(build_direction.sign)
-            .map(|id| (id, self.tiles[&id].rect.get_side_location(build_direction)));
-        let mut neg_id: Uuid = neg_start_id;
-        let mut pos_id: Uuid = pos_start_id;
+        let mut neg_iter = Cursor::new(gutter.start_id, cross_neg)
+            .iter(self, build_direction.sign)
+            .map(|id| (id, self.location(Cursor::new(id, build_direction))));
+        let mut pos_iter = Cursor::new(gutter.end_id, cross_pos)
+            .iter(self, build_direction.sign)
+            .map(|id| (id, self.location(Cursor::new(id, build_direction))));
+
+        let mut neg_id = gutter.start_id;
+        let mut pos_id = gutter.end_id;
 
         while let (Some(next_neg), Some(next_pos)) = (neg_iter.next(), pos_iter.next()) {
-            if self.are_cleanly_connected(&neg_id, &pos_id, build_direction) {
-                dividers.push((neg_id, pos_id));
-            }
             let mut neg_location;
             let mut pos_location;
-
             (neg_id, neg_location) = next_neg;
             (pos_id, pos_location) = next_pos;
+
+            if Gutter::are_connected(self, pos_id, neg_id, build_direction) {
+                dividers.push((neg_id, pos_id));
+            }
 
             while neg_location != pos_location {
                 if neg_location < pos_location {
@@ -436,7 +413,7 @@ impl Graph {
         }
 
         TransformFragment {
-            start: (neg_start_id, pos_start_id),
+            start: (gutter.start_id, gutter.end_id),
             dividers,
             end: (neg_id, pos_id),
         }

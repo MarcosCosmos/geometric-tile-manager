@@ -1,10 +1,15 @@
 use crate::geometry::Sign::{Negative, Positive};
-use crate::geometry::{Cardinal, EAST, Sign, WEST};
+use crate::geometry::{Axis, Cardinal, Sign, EAST, WEST};
 use crate::graph::{Graph, TileKind};
 use std::any::Any;
+use std::iter::{Chain, Map, Once, Scan, TakeWhile};
 use std::ops::{Deref, DerefMut, Not};
 use std::sync::atomic::Ordering::SeqCst;
 use uuid::Uuid;
+use crate::graph;
+use crate::graph::TileKind::{Surface, Window};
+
+// todo: this file is way overcomplicated from experimentation
 
 /// A cursor is a position on the side of a window.
 /// they provide the step function for navigating along the gutter of other cursor positions parallel to them.
@@ -19,73 +24,128 @@ impl Cursor {
         Self { tile_id, side }
     }
 
-    pub fn nav<'a, T>(self, graph: &'a Graph) -> T where T: From<Nav<'a>> {
-        Nav {
-            graph,
-            cursor: self,
-        }.into()
+    pub fn iter(self, graph: &Graph, direction: Sign) -> GutterIter {
+        GutterIter::new(graph, self, direction)
     }
 }
 
-
-/// a nav is basically just a cursor that can be moved directionally
 #[derive(Copy, Clone, Debug)]
-pub struct Nav<'a> {
-    pub graph: &'a Graph,
-    pub cursor: Cursor,
+// A range within a parallel gutter of windows
+pub struct Gutter {
+    pub start_id: Uuid,
+    pub end_id: Uuid,
+    pub side: Cardinal,
 }
 
-impl<'a> Nav<'a> {
-    pub fn new(graph: &'a Graph, tile_id: Uuid, side: Cardinal) -> Self {
-        Cursor { tile_id, side }.nav(graph)
+impl Gutter {
+    pub fn new(start_id: Uuid, end_id: Uuid, side: Cardinal) -> Self {
+        Self { start_id, end_id, side }
+    }
+    pub fn start(&self) -> Cursor {
+        Cursor::new(self.start_id, self.side)
+    }
+
+
+    pub fn end(&self) -> Cursor {
+        Cursor::new(self.start_id, self.side)
+    }
+
+    /// note: a and b must be supplied in order along the cross axis of the given side or this fails
+    pub fn is_connected(&self, graph: &Graph) -> bool {
+        if graph.tiles[&self.start_id].kind == Surface {
+            false
+        } else {
+            let nav = GutterIter::new(graph, self.start(), Positive);
+            let location = nav.location();
+            nav
+                .take_while(|&id| graph.location(Cursor::new(id, self.side)) == location)
+                .any(|id| id == self.end_id)
+        }
+    }
+
+    pub fn are_connected(graph: &Graph, start_id: Uuid, end_id: Uuid, side: Cardinal) -> bool {
+        Self { start_id, end_id, side }.is_connected(graph)
+    }
+
+    pub fn next(graph: &Graph, cursor: Cursor, direction: Sign) -> Option<Uuid> {
+        let location = graph.tiles[&cursor.tile_id]
+            .rect
+            .get_side_location(cursor.side);
+        let search_direction = Cardinal {
+            axis: !cursor.side.axis,
+            sign: direction,
+        };
+        let result = graph.intra_surface_neighbourhoods[&cursor.tile_id][search_direction]
+            .iter()
+            .find(|id| {
+                let tile = graph.tiles[id];
+                tile.kind == TileKind::Window
+                    && tile.rect.get_side_location(cursor.side) == location
+            });
+        if let Some(&id) = result {
+            Some(id)
+        } else {
+            None
+        }
     }
 }
 
-pub trait Navigator {
-    type Direction: Copy + Not<Output = Self::Direction>;
-    type Item;
-
-    fn next(&mut self, direction: Self::Direction) -> Option<Self::Item>;
-    fn new<'a>(graph: &'a Graph, tile_id: Uuid, side: Cardinal) -> Self
-    where
-        Self: From<Nav<'a>>,
-    {
-        Nav::new(graph, tile_id, side).into()
-    }
-
-    fn iter(self, direction: Self::Direction) -> NavIter<Self>
-    where
-        Self: Sized,
-    {
-        NavIter { inner: self, direction }
-    }
-}
-
-pub trait RawNavigator where Self : Navigator {
-    fn next_raw(graph: &Graph, tile_id: Uuid, side: Cardinal, direction: Self::Direction) -> Option<Self::Item>;
-
-    fn peek(nav: &Nav, direction: Self::Direction) -> Option<Self::Item> {
-        Self::next_raw(nav.graph, nav.cursor.tile_id, nav.cursor.side, direction)
-    }
-}
+// /// A focus nav does it's best to stick to facilitate navigating windows in a stable and minimal fashion.
+// /// Initially, it will stick to any gutter it is already in if possible for that direction.
+// /// Otherwise, it will look for the neighbour in the given direction that is closest (via the center point).
+// /// If that neighbour is the containing surface, it will try to move to the next surface over. If that succeeds, it will try to check for a similarly nearest window inside that surface.
+// /// When moving outside of a gutter, the resulting cursor will always be on the side facing opposite the requested direction.
+// ///The preserves the axis of operations and gives you the best chance to move along any corresponding gutter.
+// /// todo: note: actually it really does still need memory because differences in size may be off, so generalising iter serves no purpose
+// pub struct Focus;
+// impl NavigationStrategy for Focus {
+//     type Direction = Cardinal;
+//     fn next(&mut self, graph: &Graph, cursor: Cursor, direction: Self::Direction) -> Option<Cursor> {
+//         if direction.axis != cursor.side.axis
+//             && let Some(cursor) = Gutter::next(graph, cursor, direction.sign)
+//         {
+//             Some(cursor)
+//         } else {
+//             let mut candidates = &graph.intra_surface_neighbourhoods[&cursor.tile_id][direction];
+//             if candidates.len() == 1 && graph.tiles[&candidates[0]].kind == TileKind::Surface {
+//                 let other_canidates = &graph.intra_surface_neighbourhoods[&candidates[0]][direction];
+//                 if other_canidates.iter().any(|id| graph.tiles[id].kind != TileKind::Surface) {
+//                     candidates = &other_canidates;
+//                 } else {
+//                     return Some(Cursor::new(candidates[0], !direction));
+//                 }
+//             }
+//
+//             let axis = !direction.axis;
+//             let center = graph.tiles[&cursor.tile_id]
+//                 .rect
+//                 .get_center(axis);
+//
+//             let nearest = candidates
+//                 .iter()
+//                 .min_by(|a, b| f32::total_cmp(&f32::abs(graph.tiles[a].rect.get_center(axis) - center), &f32::abs(graph.tiles[b].rect.get_center(axis) - center)));
+//             if let Some(&id) = nearest {
+//                 Some(Cursor::new(id, !direction))
+//             } else {
+//                 None
+//             }
+//         }
+//     }
+// }
 
 // A signed cursor is effectively iterable in the appropriate direction.
 #[derive(Copy, Clone, Debug)]
-pub struct NavIter<I>
-where
-    I: Navigator,
+pub struct GutterIter<'a>
 {
-    pub inner: I,
-    pub direction: I::Direction,
+    pub graph: &'a Graph,
+    pub cursor: Cursor,
+    pub direction: Sign,
 }
 
-impl<'a, I> NavIter<I>
-where
-    I: Navigator
+impl<'a> GutterIter<'a>
 {
-    pub fn new(graph: &'a Graph, tile_id: Uuid, side: Cardinal, direction: I::Direction) -> Self
-     where I: From<Nav<'a>> {
-        Self { inner: I::new(graph, tile_id, side), direction }
+    pub fn new(graph: &'a Graph, cursor: Cursor, direction: Sign) -> Self {
+        Self { graph, cursor, direction }
     }
 
     pub fn flipped(mut self) -> Self {
@@ -96,233 +156,28 @@ where
         self.direction = !self.direction;
         self
     }
+
+
+    /// an iterator adaptor that yields the current cursor before moving on to others (generally it would be skipped by default)
+    pub fn inclusive(self) -> Chain<Once<Uuid>, Self>
+    {
+        std::iter::once(self.cursor.tile_id).chain(self)
+    }
+
+    pub fn location(&self) -> i32 {
+        self.graph.location(self.cursor)
+    }
 }
 
-impl<I> Iterator for NavIter<I>
-where
-    I: Navigator,
+impl Iterator for GutterIter<'_>
 {
-    type Item = I::Item;
+    type Item = Uuid;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next(self.direction)
-    }
-}
-
-fn peek_by<F>(graph: &Graph, tile_id: Uuid, side: Cardinal, direction: Cardinal, finder: F) -> Option<Cursor>
-    where F: Fn(&[Uuid]) -> Option<&Uuid>
-{
-    if direction.axis != side.axis
-        && let Some(id) = GutterNav::next_raw(graph, tile_id, side, direction.sign)
-    {
-        Some(Cursor::new(id, side))
-    } else {
-        let candidate = finder(
-            &graph.intra_surface_neighbourhoods[&tile_id][direction],
-        )
-        .or_else(|| {
-            finder(
-                &graph.inter_surface_neighbourhoods[&tile_id][direction],
-            )
-        });
-        if let Some(&id) = candidate {
-            Some(Cursor::new(id, !direction))
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct GutterNav<'a>(Nav<'a>);
-
-impl<'a> Deref for GutterNav<'a> {
-    type Target = Nav<'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for GutterNav<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl <'a> From<Nav<'a>> for GutterNav<'a> {
-    fn from(value: Nav<'a>) -> Self {
-        Self(value)
-    }
-}
-
-impl RawNavigator for GutterNav<'_> {
-    fn next_raw(graph: &Graph, tile_id: Uuid, side: Cardinal, direction: Sign) -> Option<Uuid> {
-        let location = graph.tiles[&tile_id]
-            .rect
-            .get_side_location(side);
-        let search_direction = Cardinal {
-            axis: !side.axis,
-            sign: direction,
-        };
-        graph.intra_surface_neighbourhoods[&tile_id][search_direction]
-            .iter()
-            .find(|id| {
-                let tile = graph.tiles[id];
-                tile.kind == TileKind::Window
-                    && tile.rect.get_side_location(side) == location
-            })
-            .copied()
-    }
-}
-
-impl Navigator for GutterNav<'_> {
-    type Direction = Sign;
-    type Item = Uuid;
-    fn next(&mut self, direction: Sign) -> Option<Uuid> {
-        let result = Self::peek(self, direction);
-        if let Some(id) = result {
-            self.cursor.tile_id = id;
+        let result = Gutter::next(self.graph, self.cursor, self.direction);
+        if result.is_some() {
+            self.cursor.tile_id = result?;
         }
         result
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-/// Navigates to the first of its neighbours in a direction (if it can't stay in the gutter)
-pub struct FirstNav<'a>(Nav<'a>);
-
-impl<'a> Deref for FirstNav<'a> {
-    type Target = Nav<'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for FirstNav<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl <'a> From<Nav<'a>> for FirstNav<'a> {
-    fn from(value: Nav<'a>) -> Self {
-        Self(value)
-    }
-}
-
-impl Navigator for FirstNav<'_> {
-    type Direction = Cardinal;
-    type Item = Cursor;
-    fn next(&mut self, direction: Cardinal) -> Option<Cursor> {
-        let result = Self::peek(self, direction);
-        if let Some(cursor) = result {
-            self.cursor = cursor;
-        }
-        result
-    }
-}
-
-impl FirstNav<'_> {
-    pub fn peek_raw(graph: &Graph, tile_id: Uuid, side: Cardinal, direction: Cardinal) -> Option<Cursor> {
-        peek_by(graph, tile_id, side, direction, <[Uuid]>::first)
-    }
-
-    pub fn peek(nav: &Nav, direction: Cardinal) -> Option<Cursor> {
-        Self::peek_raw(nav.graph, nav.cursor.tile_id, nav.cursor.side, direction)
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-/// Navigates to the last of its neighbours in a direction (if it can't stay in the gutter)
-pub struct LastNav<'a>(Nav<'a>);
-
-impl<'a> Deref for LastNav<'a> {
-    type Target = Nav<'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for LastNav<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl <'a> From<Nav<'a>> for LastNav<'a> {
-    fn from(value: Nav<'a>) -> Self {
-        Self(value)
-    }
-}
-
-impl Navigator for LastNav<'_> {
-    type Direction = Cardinal;
-    type Item = Cursor;
-    fn next(&mut self, direction: Cardinal) -> Option<Cursor> {
-        let result = Self::peek(self, direction);
-        if let Some(cursor) = result {
-            self.cursor = cursor;
-        }
-        result
-    }
-}
-
-impl RawNavigator for LastNav<'_> {
-    fn next_raw(graph: &Graph, tile_id: Uuid, side: Cardinal, direction: Cardinal) -> Option<Cursor> {
-        peek_by(graph, tile_id, side, direction, <[Uuid]>::last)
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-/// Navigates to the nearest of its neighbours in a direction (if it can't stay in the gutter)
-pub struct NearestNav<'a>(Nav<'a>);
-
-impl<'a> Deref for NearestNav<'a> {
-    type Target = Nav<'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for NearestNav<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl <'a> From<Nav<'a>> for NearestNav<'a> {
-    fn from(value: Nav<'a>) -> Self {
-        Self(value)
-    }
-}
-
-impl Navigator for NearestNav<'_> {
-    type Direction = Cardinal;
-    type Item = Cursor;
-    fn next(&mut self, direction: Cardinal) -> Option<Cursor> {
-        let result = Self::peek(self, direction);
-        if let Some(cursor) = result {
-            self.cursor = cursor;
-        }
-        result
-    }
-}
-
-
-impl RawNavigator for NearestNav<'_> {
-    fn next_raw(graph: &Graph, tile_id: Uuid, side: Cardinal, direction: Cardinal) -> Option<Cursor> {
-        let axis = !direction.axis;
-        let center = graph.tiles[&tile_id]
-            .rect
-            .get_center(axis);
-        peek_by(graph, tile_id, side, direction, |candidates| {
-            candidates
-                .iter()
-                .min_by_key(|id| i32::abs(graph.tiles[id].rect.get_center(axis) - center))
-        })
     }
 }

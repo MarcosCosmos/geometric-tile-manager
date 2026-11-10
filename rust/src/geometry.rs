@@ -33,6 +33,12 @@ pub struct Cardinal {
     pub axis: Axis,
     pub sign: Sign,
 }
+
+impl Cardinal {
+    pub fn new(axis: Axis, sign: Sign) -> Self {
+        Self { axis, sign }
+    }
+}
 //
 // #[derive(Copy, Clone, PartialEq, Eq)]
 // /// Usually associated with a corner of a box
@@ -152,10 +158,10 @@ impl Rect {
         }
     }
 
-    pub fn get_center(&self, axis: Axis) -> i32 {
+    pub fn get_center(&self, axis: Axis) -> f32 {
         match axis {
-            X => self.x + (self.width / 2),
-            Y => self.y + (self.height / 2),
+            X => self.x as f32+ (self.width as f32 / 2f32),
+            Y => self.y as f32+ (self.height as f32 / 2f32),
         }
     }
 }
