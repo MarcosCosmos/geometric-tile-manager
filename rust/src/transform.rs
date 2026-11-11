@@ -166,11 +166,18 @@ where
             let initial_neg = gutter.start().navigate_gutter(self).peek(gutter.side.sign);
             let initial_pos = gutter.end().navigate_gutter(self).peek(gutter.side.sign);
             match (initial_neg, initial_pos) {
-                (Some(neg), Some(pos)) => Some(self.build_transform_fragment(Gutter::new(
-                    neg.tile_id,
-                    pos.tile_id,
-                    !gutter.side,
-                ))),
+                (Some(neg), Some(pos)) => {
+                    let out_gutter = Gutter::new(
+                        neg.tile_id,
+                        pos.tile_id,
+                        !gutter.side,
+                    );
+                    if out_gutter.is_connected_on(self){
+                        Some(self.build_transform_fragment(out_gutter))
+                    } else {
+                        None
+                    }
+                }
                 _ => None,
             }
         };
