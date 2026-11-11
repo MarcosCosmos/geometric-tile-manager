@@ -20,7 +20,7 @@ impl Caret {
         }
     }
 
-    pub(crate) fn location_on(&self, graph: &Graph) -> i32 {
+    pub fn location_on(&self, graph: &Graph) -> i32 {
         graph.tiles[&self.tile_id].rect.get_side_location(self.side)
     }
 }
