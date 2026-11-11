@@ -39,13 +39,6 @@ impl Cardinal {
         Self { axis, sign }
     }
 }
-//
-// #[derive(Copy, Clone, PartialEq, Eq)]
-// /// Usually associated with a corner of a box
-// pub struct Diagonal {
-//     pub x: Sign,
-//     pub y: Sign,
-// }
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Rect {
@@ -71,31 +64,7 @@ impl Index<Axis> for Point {
     }
 }
 
-// impl Index<Axis> for Diagonal {
-//     type Output = Sign;
-//     fn index(&self, index: Axis) -> &Self::Output {
-//         match index {
-//             X => &self.x,
-//             Y => &self.y,
-//         }
-//     }
-// }
-
 impl Cardinal {
-    // /// as in the corners associated with this direction's the side of a box
-    // pub fn adjacent_diagonals(&self) -> (Diagonal, Diagonal) {
-    //     if self.axis == X {
-    //         (
-    //             Diagonal { x: self.sign, y: Negative },
-    //             Diagonal { x: self.sign, y: Positive },
-    //         )
-    //     } else {
-    //         (
-    //             Diagonal { x: Negative, y: self.sign },
-    //             Diagonal { x: Positive, y: self.sign },
-    //         )
-    //     }
-    // }
     pub fn perpendicular_directions(&self) -> (Cardinal, Cardinal) {
         let axis = !self.axis;
         (
@@ -126,16 +95,8 @@ impl Cardinal {
     }
 }
 
-// impl Diagonal {
-//     /// as in the sides associated with the corner of a box.
-//     /// The result is always axis align, i.e. (x, y)
-//     pub fn adjacent_cardinals(&self) -> (Cardinal, Cardinal) {
-//         (Cardinal { axis: X, sign: self.x }, Cardinal { axis: Y, sign: self.y })
-//     }
-// }
-
 impl Rect {
-    /// returns the position of the given side of the rect along the axis perpendicular to it's length
+    /// returns the location of the given side of the rect along the axis perpendicular to it's length
     /// (this being the only axis for which there is one value and not two for that side)
     pub fn get_side_location(&self, side: Cardinal) -> i32 {
         match side {
@@ -160,8 +121,8 @@ impl Rect {
 
     pub fn get_center(&self, axis: Axis) -> f32 {
         match axis {
-            X => self.x as f32+ (self.width as f32 / 2f32),
-            Y => self.y as f32+ (self.height as f32 / 2f32),
+            X => self.x as f32 + (self.width as f32 / 2f32),
+            Y => self.y as f32 + (self.height as f32 / 2f32),
         }
     }
 }
@@ -196,16 +157,6 @@ impl Not for Cardinal {
     }
 }
 
-// impl Not for Diagonal {
-//     type Output = Self;
-//     fn not(self) -> Self::Output {
-//         Self {
-//             x: !self.x,
-//             y: !self.y,
-//         }
-//     }
-// }
-
 pub const NORTH: Cardinal = Cardinal {
     axis: Y,
     sign: Negative,
@@ -222,19 +173,3 @@ pub const WEST: Cardinal = Cardinal {
     axis: X,
     sign: Negative,
 };
-// pub const NORTH_WEST: Diagonal = Diagonal {
-//     x: Negative,
-//     y: Negative,
-// };
-// pub const NORTH_EAST: Diagonal = Diagonal {
-//     x: Positive,
-//     y: Negative,
-// };
-// pub const SOUTH_EAST: Diagonal = Diagonal {
-//     x: Positive,
-//     y: Positive,
-// };
-// pub const SOUTH_WEST: Diagonal = Diagonal {
-//     x: Negative,
-//     y: Positive,
-// };
