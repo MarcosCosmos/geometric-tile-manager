@@ -48,7 +48,7 @@ impl Gutter {
 #[derive(Copy, Clone, Debug)]
 pub struct GutterNav<'a> {
     inner: Caret,
-    pub graph: &'a Graph,
+    graph: &'a Graph,
 }
 
 impl<'a> GutterNav<'a> {
