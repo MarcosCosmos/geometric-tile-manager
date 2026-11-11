@@ -22,7 +22,7 @@ impl FocusState {
             history_axis: Axis::X,
         }
     }
-    
+
     pub fn current(&self) -> Option<Caret> {
         self.inner
     }
@@ -125,7 +125,7 @@ impl<'a, 'b> Navigator for FocusNav<'_, '_> {
         {
             Some(previous)
         } else if direction.axis != self.side.axis
-            && let Some(caret) = self.navigate(self.graph).next(direction.sign)
+            && let Some(caret) = self.navigate_gutter(self.graph).peek(direction.sign)
         {
             Some(caret)
         } else if let Some(&neighbour) = {

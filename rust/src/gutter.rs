@@ -36,7 +36,7 @@ impl Gutter {
         if graph.tiles[&self.start_id].kind == Surface {
             false
         } else {
-            let nav = self.start().navigate(graph);
+            let nav = self.start().navigate_gutter(graph);
             let location = nav.location();
             nav.iter(Positive)
                 .take_while(|&n| n.location() == location)
@@ -109,7 +109,7 @@ impl Navigator for GutterNav<'_> {
         *self.deref_mut() = caret;
         self
     }
-    
+
     fn go_to(&mut self, tile_id: Uuid) -> &mut Self {
         self.tile_id = tile_id;
         self
@@ -136,11 +136,11 @@ where
 impl<T: ?Sized> GutterIterExt for T where T: Iterator<Item: Deref<Target = Caret>> {}
 
 pub trait GutterNavigation {
-    fn navigate(self, graph: &Graph) -> GutterNav;
+    fn navigate_gutter(self, graph: &Graph) -> GutterNav;
 }
 
 impl GutterNavigation for Caret {
-    fn navigate(self, graph: &Graph) -> GutterNav {
+    fn navigate_gutter(self, graph: &Graph) -> GutterNav {
         GutterNav::new(self, graph)
     }
 }

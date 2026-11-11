@@ -112,10 +112,22 @@ where
         match constraints {
             TransformContraints::Minimal => {}
             TransformContraints::Maximal => {
-                if let Some(id) = gutter.start().navigate(self).iter(Negative).ids().last() {
+                if let Some(id) = gutter
+                    .start()
+                    .navigate_gutter(self)
+                    .iter(Negative)
+                    .ids()
+                    .last()
+                {
                     gutter.start_id = id;
                 }
-                if let Some(id) = gutter.end().navigate(self).iter(Positive).ids().last() {
+                if let Some(id) = gutter
+                    .end()
+                    .navigate_gutter(self)
+                    .iter(Positive)
+                    .ids()
+                    .last()
+                {
                     gutter.end_id = id;
                 }
             }
@@ -123,19 +135,19 @@ where
                 let (cross_neg, cross_pos) = gutter.side.perpendicular_directions();
                 if let Some(c) = gutter
                     .start()
-                    .navigate(self)
+                    .navigate_gutter(self)
                     .iter(Negative)
                     .inclusive()
-                    .find(|c| c.clone().face(cross_neg).next(gutter.side.sign).is_some())
+                    .find(|c| c.clone().face(cross_neg).peek(gutter.side.sign).is_some())
                 {
                     gutter.start_id = c.tile_id;
                 }
                 if let Some(c) = gutter
                     .end()
-                    .navigate(self)
+                    .navigate_gutter(self)
                     .iter(Positive)
                     .inclusive()
-                    .find(|c| c.clone().face(cross_pos).next(gutter.side.sign).is_some())
+                    .find(|c| c.clone().face(cross_pos).peek(gutter.side.sign).is_some())
                 {
                     gutter.end_id = c.tile_id;
                 }
@@ -151,8 +163,8 @@ where
         let inward_fragment = self.build_transform_fragment(gutter);
 
         let maybe_outward_fragment = {
-            let initial_neg = gutter.start().navigate(self).next(gutter.side.sign);
-            let initial_pos = gutter.end().navigate(self).next(gutter.side.sign);
+            let initial_neg = gutter.start().navigate_gutter(self).peek(gutter.side.sign);
+            let initial_pos = gutter.end().navigate_gutter(self).peek(gutter.side.sign);
             match (initial_neg, initial_pos) {
                 (Some(neg), Some(pos)) => Some(self.build_transform_fragment(Gutter::new(
                     neg.tile_id,
@@ -200,17 +212,19 @@ where
         let mut dividers = Vec::new();
         let mut neg_iter = gutter
             .start()
-            .navigate(self)
+            .navigate_gutter(self)
             .face(cross_neg)
             .iter(build_direction.sign);
         let mut pos_iter = gutter
             .end()
-            .navigate(self)
+            .navigate_gutter(self)
             .face(cross_pos)
             .iter(build_direction.sign);
 
         while let (Some(next_neg), Some(next_pos)) = (neg_iter.next(), pos_iter.next()) {
-            if Gutter::new(next_neg.tile_id, next_pos.tile_id, build_direction).is_connected_on(self) {
+            if Gutter::new(next_neg.tile_id, next_pos.tile_id, build_direction)
+                .is_connected_on(self)
+            {
                 dividers.push((next_neg.tile_id, next_pos.tile_id));
                 continue;
             }
