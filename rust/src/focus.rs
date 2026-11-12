@@ -1,6 +1,6 @@
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{Axis, Cardinal, Sign};
-use crate::graph::{Graph, TileKind};
+use crate::graph::{Graph};
 use crate::gutter::GutterNavigation;
 use crate::navigation::{Caret, Navigator};
 use std::ops::Deref;
@@ -82,12 +82,12 @@ impl<'a, 'b> FocusNav<'a, 'b> {
     fn candidate_neighbours(&self, direction: Cardinal) -> &Vec<Uuid> {
         let current = self.state.inner.unwrap();
         let mut candidates = &self.graph.intra_surface_neighbourhoods[&current.tile_id][direction];
-        if candidates.len() == 1 && self.graph.tiles[&candidates[0]].kind == TileKind::Surface {
+        if candidates.len() == 1 && !self.graph.tiles[&candidates[0]].is_window() {
             let other_canidates =
                 &self.graph.intra_surface_neighbourhoods[&candidates[0]][direction];
             if other_canidates
                 .iter()
-                .any(|id| self.graph.tiles[id].kind != TileKind::Surface)
+                .any(|id| self.graph.tiles[id].is_window())
             {
                 &other_canidates
             } else {

@@ -1,7 +1,6 @@
-use crate::geometry::Sign::Positive;
+use crate::geometry::Sign::*;
 use crate::geometry::{Cardinal, Sign};
-use crate::graph::TileKind::Surface;
-use crate::graph::{Graph, TileKind};
+use crate::graph::Graph;
 use crate::navigation::{Caret, Navigator};
 use std::iter::Map;
 use std::ops::{Deref, DerefMut};
@@ -31,15 +30,23 @@ impl Gutter {
         Caret::new(self.start_id, self.side)
     }
 
+    pub fn location_on(&self, graph: &Graph) -> i32 {
+        let start_location = self.start().location_on(graph);
+        let end_location = self.end().location_on(graph);
+        match self.side.sign {
+            Positive => i32::min(start_location, end_location),
+            Negative => i32::max(start_location, end_location),
+        }
+    }
+
     /// note: a and b must be supplied in order along the cross axis of the given side or this fails
     pub fn is_connected_on(&self, graph: &Graph) -> bool {
-        if graph.tiles[&self.start_id].kind == Surface {
+        if !graph.tiles[&self.start_id].is_window() {
             false
         } else {
-            let nav = self.start().navigate_gutter(graph);
-            let location = nav.location();
-            nav.iter(Positive)
-                .take_while(|&n| n.location() == location)
+            self.start()
+                .navigate_gutter(graph)
+                .iter(Positive)
                 .any(|n| n.tile_id == self.end_id)
         }
     }
@@ -90,7 +97,7 @@ impl Navigator for GutterNav<'_> {
         };
         self.graph.intra_surface_neighbourhoods[&self.tile_id][search_direction]
             .iter()
-            .filter(|id| self.graph.tiles[id].kind == TileKind::Window)
+            .filter(|id| self.graph.tiles[id].is_window())
             .map(|&id| Caret::new(id, self.side))
             .find(|c| c.location_on(self.graph) == location)
     }

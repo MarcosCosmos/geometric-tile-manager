@@ -1,4 +1,5 @@
 use crate::geometry::{Axis::*, Cardinal, Rect, Sign::*};
+use crate::gutter::Gutter;
 use crate::result::{Error, Result};
 use crate::transform::TransformContraints;
 use std::cmp::{Ordering, PartialEq};
@@ -6,15 +7,9 @@ use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 use uuid::Uuid;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum TileKind {
-    Surface,
-    Window,
-}
-
 #[derive(Copy, Clone, Debug)]
 pub struct Tile {
-    pub kind: TileKind,
+    pub surface_id: Option<Uuid>,
     pub id: Uuid,
     pub rect: Rect,
 }
@@ -117,8 +112,24 @@ impl IndexMut<Cardinal> for Neighbourhood {
 }
 
 impl Tile {
-    pub fn new(id: Uuid, kind: TileKind, rect: Rect) -> Self {
-        Self { id, kind, rect }
+    pub fn new_surface(rect: Rect) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            rect,
+            surface_id: None,
+        }
+    }
+
+    pub fn new_window(rect: Rect, surface_id: Uuid) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            rect,
+            surface_id: Some(surface_id),
+        }
+    }
+
+    pub fn is_window(&self) -> bool {
+        self.surface_id.is_some()
     }
 }
 
@@ -128,29 +139,29 @@ impl Graph {
     }
 
     pub fn new_surface(&mut self, rect: Rect) -> Uuid {
-        let id = Uuid::new_v4();
-        self.tiles
-            .insert(id, Tile::new(id, TileKind::Surface, rect));
+        let surface = Tile::new_surface(rect);
+        let id = surface.id;
+        self.tiles.insert(id, surface);
         self.intra_surface_neighbourhoods
+            .insert(id, Neighbourhood::new());
+        self.inter_surface_neighbourhoods
             .insert(id, Neighbourhood::new());
         id
     }
 
     pub fn new_window(
         &mut self,
-        target_id: &Uuid,
         direction: Cardinal,
-        strategy: TransformContraints,
+        origin: Gutter,
+        constraints: TransformContraints,
     ) -> Result<Uuid> {
-        let id = Uuid::new_v4();
-        // todo: this is redundant because of internal similar calls. Might actually be easier to go with command/message processing so we can do prechecks?a
-        if !self.tiles.contains_key(target_id) {
-            return Err(Error::TileNotFound(*target_id));
-        }
-
+        assert!(origin.is_connected_on(self));
         let rect: Rect; // todo
 
-        self.tiles.insert(id, Tile::new(id, TileKind::Window, rect));
+        let surface_id = self.tiles[&origin.start_id].surface_id.unwrap();
+        let window = Tile::new_window(rect, surface_id);
+        let id = window.id;
+        self.tiles.insert(id, window);
 
         // todo: all of this only works if strictly splitting the target. A more complicated strategy is needed for resizing all along the parallel
 

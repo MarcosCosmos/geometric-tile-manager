@@ -39,7 +39,7 @@ pub trait Navigator: Deref<Target = Caret> {
 
     fn face(&mut self, side: Cardinal) -> &mut Self;
 
-    fn iter<'a>(self, direction: Self::Direction) -> NavIter<Self>
+    fn iter(self, direction: Self::Direction) -> NavIter<Self>
     where
         Self: Copy,
     {
@@ -52,7 +52,7 @@ pub struct NavIter<T>
 where
     T: Navigator + Copy,
 {
-    pub current: T,
+    current: T,
     direction: T::Direction,
 }
 
@@ -66,7 +66,7 @@ where
             direction,
         }
     }
-    pub fn inclusive<'a>(self) -> Chain<Once<T>, Self>
+    pub fn inclusive(self) -> Chain<Once<T>, Self>
     where
         T: Sized + Copy,
     {

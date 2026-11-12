@@ -1,8 +1,11 @@
+use crate::geometry::Axis::{X, Y};
 use crate::geometry::Sign::{Negative, Positive};
-use crate::geometry::{Axis, Sign};
-use crate::graph::{Graph, TileKind};
+use crate::geometry::{Axis, Cardinal, Sign};
+use crate::graph::{Graph};
 use crate::gutter::{Gutter, GutterIterExt, GutterNavigation};
-use crate::navigation::Navigator;
+use crate::navigation::{Caret, Navigator};
+use std::cmp::Ordering;
+use std::iter::Scan;
 use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
 
@@ -24,6 +27,22 @@ pub struct TransformFragment {
     pub start: (Uuid, Uuid),
     pub dividers: Vec<(Uuid, Uuid)>,
     pub end: (Uuid, Uuid),
+}
+
+impl TransformFragment {
+    pub fn gutters(&self, direction: Cardinal) -> impl Iterator<Item = Gutter> {
+        std::iter::once(Gutter::new(self.start.0, self.end.0, !direction))
+            .chain(
+                self.dividers
+                    .iter()
+                    .chain(std::iter::once(&self.end))
+                    .map(move |(start, end)| Gutter::new(*start, *end, direction)),
+            )
+    }
+
+    pub fn segments(&self, direction: Cardinal) -> impl Iterator<Item = (Gutter, Gutter)> {
+        self.gutters(direction).zip(self.gutters(direction).skip(1))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -160,20 +179,16 @@ where
     fn build_transform_container(&self, gutter: Gutter) -> Option<TransformContainer> {
         debug_assert!(gutter.is_connected_on(self));
 
-        let inward_fragment = self.build_transform_fragment(gutter);
+        let inward_fragment = self.build_transform_fragment((gutter.start_id, gutter.end_id), None, !gutter.side);
 
         let maybe_outward_fragment = {
             let initial_neg = gutter.start().navigate_gutter(self).peek(gutter.side.sign);
             let initial_pos = gutter.end().navigate_gutter(self).peek(gutter.side.sign);
             match (initial_neg, initial_pos) {
                 (Some(neg), Some(pos)) => {
-                    let out_gutter = Gutter::new(
-                        neg.tile_id,
-                        pos.tile_id,
-                        !gutter.side,
-                    );
-                    if out_gutter.is_connected_on(self){
-                        Some(self.build_transform_fragment(out_gutter))
+
+                    if Gutter::new(neg.tile_id, pos.tile_id, !gutter.side).is_connected_on(self) {
+                        Some(self.build_transform_fragment((neg.tile_id, pos.tile_id), None, gutter.side))
                     } else {
                         None
                     }
@@ -209,27 +224,30 @@ where
 
     /// note: there is a strict contractual expectation that the starting window(s) are
     ///     in a clean parallel line on the side opposite to the direction we are building in.
-    fn build_transform_fragment(&self, gutter: Gutter) -> TransformFragment {
-        debug_assert!(self.tiles[&gutter.start_id].kind == TileKind::Window);
-        debug_assert!(self.tiles[&gutter.end_id].kind == TileKind::Window);
-        // note: we're actually building in the direction opposit our valid gutter
-        assert!(gutter.is_connected_on(self));
-        let build_direction = !gutter.side;
+    /// note: we're actually building in the direction opposite to that of our valid and well-connected gutter, since that ensures the gutter is strictly included.
+    fn build_transform_fragment(
+        &self,
+        start: (Uuid, Uuid),
+        end: Option<(Uuid, Uuid)>,
+        build_direction: Cardinal,
+    ) -> TransformFragment {
+        assert!(Gutter::new(start.0, start.1, !build_direction).is_connected_on(self));
         let (cross_neg, cross_pos) = build_direction.perpendicular_directions();
         let mut dividers = Vec::new();
-        let mut neg_iter = gutter
-            .start()
-            .navigate_gutter(self)
-            .face(cross_neg)
-            .iter(build_direction.sign);
-        let mut pos_iter = gutter
-            .end()
-            .navigate_gutter(self)
-            .face(cross_pos)
-            .iter(build_direction.sign);
+        let mut current_neg = Caret::new(start.0, cross_neg).navigate_gutter(self);
+        let mut current_pos = Caret::new(start.0, cross_pos).navigate_gutter(self);
+        let mut neg_iter = current_neg.iter(build_direction.sign);
+        let mut pos_iter = current_pos.iter(build_direction.sign);
 
         while let (Some(next_neg), Some(next_pos)) = (neg_iter.next(), pos_iter.next()) {
-            if Gutter::new(next_neg.tile_id, next_pos.tile_id, build_direction)
+            current_neg = next_neg;
+            current_pos = next_pos;
+            if end.is_some_and(|(neg_end, pos_end)| {
+                current_neg.tile_id == neg_end || next_pos.tile_id == pos_end
+            }) {
+                break;
+            }
+            if Gutter::new(current_neg.tile_id, current_pos.tile_id, build_direction)
                 .is_connected_on(self)
             {
                 dividers.push((next_neg.tile_id, next_pos.tile_id));
@@ -242,12 +260,14 @@ where
             while neg_location != pos_location {
                 if neg_location < pos_location {
                     if let Some(next_neg) = neg_iter.next() {
+                        current_neg = next_neg;
                         neg_location = next_neg.location();
                     } else {
                         break;
                     }
                 } else if neg_location > pos_location {
                     if let Some(next_pos) = pos_iter.next() {
+                        current_pos = next_pos;
                         pos_location = next_pos.location()
                     } else {
                         break;
@@ -257,9 +277,134 @@ where
         }
 
         TransformFragment {
-            start: (gutter.start_id, gutter.end_id),
+            start,
             dividers,
-            end: (neg_iter.current.tile_id, pos_iter.current.tile_id),
+            end: (current_neg.tile_id, current_pos.tile_id),
         }
     }
+
+
+    /// low-level resizing is always done with one side fixed in place (only the non-anchored side actually moves)
+    fn resize_tile(&mut self, tile_id: Uuid, fragment_direction: Cardinal, size_delta: i32, anchor_end: bool) {
+        let delta_signedness = size_delta.cmp(&0);
+        if delta_signedness == Ordering::Equal {
+            return;
+        }
+        // todo: the anchoring is not always so transparent as this, sometimes there is a shift, will need to rework this to handle the conditional translation that varies based on position
+        let rect = &mut self.tiles.get_mut(&tile_id).unwrap().rect;
+        let location_delta = match (fragment_direction.sign, delta_signedness, anchor_end) {
+            (Negative, _, true) => 0,
+
+            (Positive, Ordering::Less, true) => size_delta,
+            (Positive, Ordering::Greater, true) => -size_delta,
+            (Positive, Ordering::Less, false) => {}
+            (Positive, Ordering::Greater, false) => {}
+            (Negative, Ordering::Less, false) => {},
+            (Negative, Ordering::Greater, false) => {},
+            (_, Ordering::Equal, _) => panic!(),
+        };
+        match fragment_direction.axis {
+            X => {
+                rect.width += size_delta;
+                rect.x += location_delta;
+            }
+            Y => {
+                rect.height += size_delta;
+                rect.y += location_delta;
+            }
+        }
+    }
+
+    /// low-level resizing is always done with one side fixed in place (only the non-anchored side actually moves)
+    fn resize_transform_fragment(
+        &mut self,
+        fragment: TransformFragment,
+        fragment_direction: Cardinal,
+        size_delta: i32,
+        anchor_end: bool, // this is used recursively and should be defaulted to true for external calls
+    ) {
+        if fragment.start.0 == fragment.end.1 {
+            assert_eq!(fragment.start.0, fragment.start.1);
+            assert_eq!(fragment.end.0, fragment.end.1);
+            self.resize_tile(fragment.start.0, fragment_direction, size_delta, anchor_end);
+            return;
+        }
+
+        let segment_count: i32 = fragment.dividers.len() as i32 + 1;
+        let deltas = if segment_count == 1 {
+            vec![(size_delta, size_delta.abs())]
+        } else {
+            let positions: Vec<i32> = fragment
+                .gutters(fragment_direction)
+                .map(|gutter| gutter.location_on(self))
+                .collect();
+            let start_position = positions[0];
+            let end_position = positions.last().unwrap();
+            let initial_size = i32::abs(end_position - start_position);
+            let result_size = initial_size + size_delta;
+            assert!(result_size >= 0);
+            let scale = result_size as f64 / initial_size as f64;
+            let mut sizes: Vec<(i32, i32)> = positions
+                .iter()
+                .zip(positions.iter().skip(1))
+                .map(|(a, b)| {
+                    let initial = i32::abs(b - a);
+                    let result = f64::floor(initial as f64 * scale) as i32;
+                    (initial, result)
+                })
+                .collect();
+
+            let remainder = result_size - sizes.iter().map(|(_, result)| *result).sum::<i32>();
+            assert!(remainder >= 0);
+            assert!(remainder < segment_count);
+            sizes
+                .iter_mut()
+                .rev()
+                .take(remainder as usize)
+                .for_each(|(_, result)| {
+                    *result += 1;
+                });
+            let iter = sizes
+                .into_iter();
+            let result = sizes.into_iter().map(|(old, new)| (new - old, 0)).collect();
+            match fragment_direction.sign {
+
+            }
+            result
+        };
+
+        for (i, ((start, end), segment_size_delta)) in fragment.segments(fragment_direction).zip(deltas).enumerate()
+        {
+            if segment_size_delta == 0 {
+                continue;
+            }
+            let anchor_segment = anchor_end && i == (segment_count as usize - 1);
+            // subdivide on the cross axis to find relative subdivisions on this axis and recurse into them
+            let cross_pos = Cardinal::new(!fragment_direction.axis, Positive);
+            for (cross_start, cross_end) in self
+                .build_transform_fragment(
+                    (start.start_id, end.start_id),
+                    Some((start.end_id, end.end_id)),
+                    cross_pos
+                )
+                .segments(cross_pos)
+            {
+                let subfragment = match fragment_direction.sign {
+                    Positive => self.build_transform_fragment((cross_start.start_id, cross_end.start_id), Some((cross_start.end_id, cross_end.end_id)), fragment_direction),
+                    Negative => self.build_transform_fragment((cross_start.end_id, cross_end.end_id), Some((cross_start.start_id, cross_end.start_id)), fragment_direction),
+                };
+                // recursively adjust subfragments
+                self.resize_transform_fragment(subfragment, fragment_direction, segment_size_delta, anchor_segment);
+            }
+        }
+    }
+}
+
+
+fn pack_adjustments<I: &mut[(i32,i32)::]>>(all_sizes: I) -> Scan<I, i32, fn(&mut i32, (i32, i32)) -> Option<(i32, i32)>> {
+    all_sizes.scan(0i32, |shift, (old, new)| {
+        let size_delta = old - new;
+        *shift += size_delta.abs();
+        Some((size_delta, *shift))
+    })
 }
