@@ -1,30 +1,114 @@
-use crate::geometry::Axis::{X, Y};
+use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
+use crate::navigation::Navigator;
 use std::cmp::Ordering;
-use std::ops::{Index, Not};
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Point {
-    x: i32,
-    y: i32,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Edge {
-    start: Point,
-    end: Point,
-}
+use std::ops::{Index, IndexMut, Not};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Axis {
-    X,
-    Y,
+    Horizontal,
+    Vertical,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Sign {
     Negative,
     Positive,
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct AxisBounds {
+    pub origin: i32,
+    pub size: i32,
+}
+
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
+pub enum BoundsOrdering {
+    Before,
+    PartiallyBefore,
+    Contains,
+    Parallel,
+    ContainedBy,
+    PartiallyAfter,
+    After,
+}
+
+impl Into<Ordering> for BoundsOrdering {
+    fn into(self) -> Ordering {
+        match self {
+            BoundsOrdering::Before | BoundsOrdering::PartiallyBefore | BoundsOrdering::Contains => {
+                Ordering::Less
+            }
+            BoundsOrdering::Parallel => Ordering::Equal,
+            BoundsOrdering::ContainedBy
+            | BoundsOrdering::PartiallyAfter
+            | BoundsOrdering::After => Ordering::Greater,
+        }
+    }
+}
+
+impl AxisBounds {
+    fn location(&self, index: Sign) -> i32 {
+        match index {
+            Negative => self.origin,
+            Positive => self.origin + self.size,
+        }
+    }
+
+    pub fn center(&self) -> f32 {
+        self.origin as f32 + (self.size as f32 / 2f32)
+    }
+
+    pub fn cmp(&self, other: &AxisBounds) -> BoundsOrdering {
+        assert!(self.size >= 0);
+        assert!(other.size >= 0);
+        let max = self.origin + self.size;
+        let other_max = other.origin + other.size;
+        if self.origin < other.origin {
+            if max < other.origin {
+                BoundsOrdering::Before
+            } else if max < other_max {
+                BoundsOrdering::PartiallyBefore
+            } else {
+                BoundsOrdering::Contains
+            }
+        } else if self.origin > other.origin {
+            if self.origin > other_max {
+                BoundsOrdering::After
+            } else if max > other_max {
+                BoundsOrdering::PartiallyAfter
+            } else {
+                BoundsOrdering::ContainedBy
+            }
+        } else {
+            if max < other_max {
+                BoundsOrdering::ContainedBy
+            } else if max > other_max {
+                BoundsOrdering::Contains
+            } else {
+                BoundsOrdering::Parallel
+            }
+        }
+    }
+
+    /// splits the target bounds into two portions:
+    /// - the first is the portion of the bounds that lie inside these bounds, and the second is a delta that when added first results in the original.
+    pub fn clamp(self, container: AxisBounds) -> AxisBounds {
+        assert_ne!(self.cmp(&container), BoundsOrdering::Contains);
+        let container_max = container.origin + container.size;
+        let clamped_min = self.origin.clamp(container.origin, container_max);
+        let clamped_max = (self.origin + self.size).clamp(container.origin, container_max);
+        AxisBounds {
+            origin: clamped_min,
+            size: clamped_max - clamped_min,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct Bounds {
+    pub horizontal: AxisBounds,
+    pub vertical: AxisBounds,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -38,33 +122,7 @@ impl Cardinal {
     pub fn new(axis: Axis, sign: Sign) -> Self {
         Self { axis, sign }
     }
-}
 
-#[derive(Copy, Clone, Debug, Default)]
-pub struct Rect {
-    pub x: i32,
-    pub y: i32,
-    pub width: i32,
-    pub height: i32,
-}
-
-impl Point {
-    pub fn new(x: i32, y: i32) -> Self {
-        Self { x, y }
-    }
-}
-
-impl Index<Axis> for Point {
-    type Output = i32;
-    fn index(&self, index: Axis) -> &Self::Output {
-        match index {
-            X => &self.x,
-            Y => &self.y,
-        }
-    }
-}
-
-impl Cardinal {
     pub fn perpendicular_directions(&self) -> (Cardinal, Cardinal) {
         let axis = !self.axis;
         (
@@ -78,51 +136,32 @@ impl Cardinal {
             },
         )
     }
+}
 
-    pub fn cmp(&self, a: &Rect, b: &Rect) -> Ordering {
-        let natural = match self.axis {
-            X if (a.x + a.width) < b.x => Ordering::Less,
-            X if a.x > (b.x + b.width) => Ordering::Greater,
-            Y if (a.y + a.height) < b.y => Ordering::Less,
-            Y if a.y > (b.y + b.height) => Ordering::Greater,
-            _ => Ordering::Equal,
-        };
-        if self.sign == Positive {
-            natural
-        } else {
-            natural.reverse()
+impl Bounds {
+    /// returns the location of the given side of the rect along the axis perpendicular to it's length
+    /// (this being the only axis for which there is one value and not two for that side)
+    pub fn location(&self, side: Cardinal) -> i32 {
+        self[side.axis].location(side.sign)
+    }
+}
+
+impl Index<Axis> for Bounds {
+    type Output = AxisBounds;
+
+    fn index(&self, index: Axis) -> &Self::Output {
+        match index {
+            Horizontal => &self.horizontal,
+            Vertical => &self.vertical,
         }
     }
 }
 
-impl Rect {
-    /// returns the location of the given side of the rect along the axis perpendicular to it's length
-    /// (this being the only axis for which there is one value and not two for that side)
-    pub fn get_side_location(&self, side: Cardinal) -> i32 {
-        match side {
-            Cardinal {
-                axis: X,
-                sign: Negative,
-            } => self.x,
-            Cardinal {
-                axis: X,
-                sign: Positive,
-            } => self.x + self.width,
-            Cardinal {
-                axis: Y,
-                sign: Negative,
-            } => self.y,
-            Cardinal {
-                axis: Y,
-                sign: Positive,
-            } => self.y + self.height,
-        }
-    }
-
-    pub fn get_center(&self, axis: Axis) -> f32 {
-        match axis {
-            X => self.x as f32 + (self.width as f32 / 2f32),
-            Y => self.y as f32 + (self.height as f32 / 2f32),
+impl IndexMut<Axis> for Bounds {
+    fn index_mut(&mut self, index: Axis) -> &mut Self::Output {
+        match index {
+            Horizontal => &mut self.horizontal,
+            Vertical => &mut self.vertical,
         }
     }
 }
@@ -131,8 +170,8 @@ impl Not for Axis {
     type Output = Self;
     fn not(self) -> Self::Output {
         match self {
-            X => Y,
-            Y => X,
+            Horizontal => Vertical,
+            Vertical => Horizontal,
         }
     }
 }
@@ -158,18 +197,20 @@ impl Not for Cardinal {
 }
 
 pub const NORTH: Cardinal = Cardinal {
-    axis: Y,
+    axis: Vertical,
     sign: Negative,
 };
 pub const SOUTH: Cardinal = Cardinal {
-    axis: Y,
+    axis: Vertical,
     sign: Positive,
 };
 pub const EAST: Cardinal = Cardinal {
-    axis: X,
+    axis: Horizontal,
     sign: Positive,
 };
 pub const WEST: Cardinal = Cardinal {
-    axis: X,
+    axis: Horizontal,
     sign: Negative,
 };
+
+

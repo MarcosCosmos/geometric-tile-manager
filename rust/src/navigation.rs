@@ -1,27 +1,73 @@
 use crate::geometry::Cardinal;
-use crate::graph::Graph;
+use crate::geometry::Sign::{Negative, Positive};
+use crate::graph::{Graph, NodeId};
+use crate::gutter::GutterNavigation;
 use std::iter::{Chain, Once};
-use std::ops::{Deref, DerefMut, Not};
-use uuid::Uuid;
+use std::ops::{Deref, Not};
 
-/// A caret is a position on the side of a window.
+/// A caret is a position on the side of a node.
 /// they provide the step function for navigating along the gutter of carets parallel to them.
 #[derive(Copy, Clone, Debug)]
 pub struct Caret {
-    pub tile_id: Uuid,
+    pub node_id: NodeId,
     pub side: Cardinal,
 }
 
 impl Caret {
-    pub fn new(tile_id: Uuid, side: Cardinal) -> Self {
+    pub fn new(node_id: NodeId, side: Cardinal) -> Self {
         Self {
-            tile_id,
+            node_id: node_id,
             side: side,
         }
     }
 
-    pub fn location_on(&self, graph: &Graph) -> i32 {
-        graph.tiles[&self.tile_id].rect.get_side_location(self.side)
+    pub fn get_location(&self, graph: &Graph) -> i32 {
+        graph.bounds[&self.node_id].location(self.side)
+    }
+}
+
+
+
+#[derive(Copy, Clone, Debug)]
+// As in, a line between two parallel Carets.
+// This line may or may not be fully "connected" (without cutting through the interior of any tiles)
+pub struct Line {
+    pub start_id: NodeId,
+    pub end_id: NodeId,
+    pub side: Cardinal,
+}
+
+impl Line {
+    pub fn new(start_id: NodeId, end_id: NodeId, side: Cardinal) -> Self {
+        Self {
+            start_id,
+            end_id,
+            side,
+        }
+    }
+    pub fn start(&self) -> Caret {
+        Caret::new(self.start_id, self.side)
+    }
+
+    pub fn end(&self) -> Caret {
+        Caret::new(self.start_id, self.side)
+    }
+
+    pub fn get_location(&self, graph: &Graph) -> i32 {
+        let start_location = self.start().get_location(graph);
+        let end_location = self.end().get_location(graph);
+        match self.side.sign {
+            Positive => i32::min(start_location, end_location),
+            Negative => i32::max(start_location, end_location),
+        }
+    }
+
+    /// note: a and b must be supplied in order along the cross axis of the given side or this fails
+    pub fn is_connected_on(&self, graph: &Graph) -> bool {
+        self.start()
+            .navigate_gutter(graph)
+            .iter(Positive)
+            .any(|n| n.node_id == self.end_id)
     }
 }
 
@@ -35,7 +81,7 @@ pub trait Navigator: Deref<Target = Caret> {
 
     fn set_caret(&mut self, caret: Caret) -> &mut Self;
 
-    fn go_to(&mut self, tile_id: Uuid) -> &mut Self;
+    fn go_to(&mut self, node_id: NodeId) -> &mut Self;
 
     fn face(&mut self, side: Cardinal) -> &mut Self;
 

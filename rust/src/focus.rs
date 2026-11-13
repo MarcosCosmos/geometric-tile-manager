@@ -1,10 +1,10 @@
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{Axis, Cardinal, Sign};
-use crate::graph::{Graph};
+use crate::graph::{Graph, NodeId};
 use crate::gutter::GutterNavigation;
 use crate::navigation::{Caret, Navigator};
 use std::ops::Deref;
-use uuid::Uuid;
+use crate::graph::NodeId::{Surface, Tile};
 
 pub struct FocusState {
     inner: Option<Caret>,
@@ -19,7 +19,7 @@ impl FocusState {
             inner: None,
             negative_history: Vec::new(),
             positive_history: Vec::new(),
-            history_axis: Axis::X,
+            history_axis: Axis::Horizontal,
         }
     }
 
@@ -30,7 +30,7 @@ impl FocusState {
     /// checks if the current caret still exists in the graph, and sets it to none if so
     pub fn sanitize(&mut self, graph: &Graph) {
         self.inner
-            .take_if(|c| !graph.tiles.contains_key(&c.tile_id));
+            .take_if(|c| !graph.bounds.contains_key(&c.node_id));
     }
 
     /// returns none if there is no current focus
@@ -55,10 +55,10 @@ pub struct FocusNav<'a, 'b> {
     graph: &'b Graph,
 }
 
-/// The navigator does it's best to stick to facilitate navigating windows in a stable and minimal fashion.
+/// The navigator does it's best to stick to facilitate navigating tiles in a stable and minimal fashion.
 /// When focusing directionally, it will stick to any gutter it is already in if possible for that direction.
 /// Otherwise, it will look for the neighbour in the given direction that is closest (via the center point).
-/// If that neighbour is the containing surface, it will try to move to the next surface over. If that succeeds, it will try to check for a similarly nearest window inside that surface.
+/// If that neighbour is the containing surface, it will try to move to the next surface over. If that succeeds, it will try to check for a similarly nearest tile inside that surface.
 /// When moving outside of a gutter, the resulting caret will always be on the side facing opposite the requested direction.
 /// It also maintains miminal single-axis history to ensure these movements are reversible.
 ///
@@ -79,23 +79,39 @@ impl<'a, 'b> FocusNav<'a, 'b> {
         }
     }
 
-    fn candidate_neighbours(&self, direction: Cardinal) -> &Vec<Uuid> {
+    fn candidate_neighbours(&self, direction: Cardinal) -> &Vec<NodeId> {
         let current = self.state.inner.unwrap();
-        let mut candidates = &self.graph.intra_surface_neighbourhoods[&current.tile_id][direction];
-        if candidates.len() == 1 && !self.graph.tiles[&candidates[0]].is_window() {
-            let other_canidates =
-                &self.graph.intra_surface_neighbourhoods[&candidates[0]][direction];
-            if other_canidates
-                .iter()
-                .any(|id| self.graph.tiles[id].is_window())
+        let candidates = &self.graph.intra_surface_neighbourhoods[&current.node_id][direction];
+        if candidates.len() == 1 && let Surface(home_id) = candidates[0] {
+            let neighbour_surfaces = &self.graph.inter_surface_neighbourhoods[&home_id][direction];
+            if let Some(next_surface_id) =
+                self.nearest_by_centers(neighbour_surfaces, direction.axis)
             {
-                &other_canidates
-            } else {
-                candidates
+                let distant_candidates =
+                    &self.graph.intra_surface_neighbourhoods[&next_surface_id][direction];
+                if distant_candidates
+                    .iter()
+                    .any(|id| id.is_tile())
+                {
+                    return &neighbour_surfaces;
+                }
             }
-        } else {
-            candidates
         }
+
+        candidates
+    }
+
+    fn nearest_by_centers(&self, candidates: &Vec<NodeId>, axis: Axis) -> Option<NodeId> {
+        let center = self.graph.bounds[&self.node_id][axis].center();
+        candidates
+            .iter()
+            .min_by(|a, b| {
+                f32::total_cmp(
+                    &f32::abs(self.graph.bounds[a][axis].center() - center),
+                    &f32::abs(self.graph.bounds[b][axis].center() - center),
+                )
+            })
+            .copied()
     }
 }
 
@@ -111,7 +127,7 @@ impl<'a, 'b> Navigator for FocusNav<'_, '_> {
     type Direction = Cardinal;
 
     fn location(&self) -> i32 {
-        self.location_on(self.graph)
+        self.get_location(self.graph)
     }
 
     fn peek(&self, direction: Cardinal) -> Option<Caret> {
@@ -121,23 +137,14 @@ impl<'a, 'b> Navigator for FocusNav<'_, '_> {
             && let Some(&previous) = self
                 .history(direction.sign)
                 .last()
-                .filter(|c| candidates.contains(&c.tile_id))
+                .filter(|c| candidates.contains(&c.node_id))
         {
             Some(previous)
         } else if direction.axis != self.side.axis
             && let Some(caret) = self.navigate_gutter(self.graph).peek(direction.sign)
         {
             Some(caret)
-        } else if let Some(&neighbour) = {
-            let axis = !direction.axis;
-            let center = self.graph.tiles[&self.tile_id].rect.get_center(axis);
-            candidates.iter().min_by(|a, b| {
-                f32::total_cmp(
-                    &f32::abs(self.graph.tiles[a].rect.get_center(axis) - center),
-                    &f32::abs(self.graph.tiles[b].rect.get_center(axis) - center),
-                )
-            })
-        } {
+        } else if let Some(neighbour) = self.nearest_by_centers(candidates, direction.axis) {
             Some(Caret::new(neighbour, !direction))
         } else {
             None
@@ -155,7 +162,7 @@ impl<'a, 'b> Navigator for FocusNav<'_, '_> {
             if direction.axis == self.state.history_axis {
                 let past = self.history_mut(direction.sign);
                 if past
-                    .pop_if(|top| top.tile_id == destination.tile_id)
+                    .pop_if(|top| top.node_id == destination.node_id)
                     .is_none()
                 {
                     past.clear();
@@ -183,8 +190,8 @@ impl<'a, 'b> Navigator for FocusNav<'_, '_> {
         self
     }
 
-    fn go_to(&mut self, tile_id: Uuid) -> &mut Self {
-        self.set_caret(Caret::new(tile_id, self.side))
+    fn go_to(&mut self, node_id: NodeId) -> &mut Self {
+        self.set_caret(Caret::new(node_id, self.side))
     }
 
     fn face(&mut self, side: Cardinal) -> &mut Self {

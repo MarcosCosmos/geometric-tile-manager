@@ -1,56 +1,10 @@
 use crate::geometry::Sign::*;
 use crate::geometry::{Cardinal, Sign};
-use crate::graph::Graph;
+use crate::graph::{Graph, NodeId};
 use crate::navigation::{Caret, Navigator};
 use std::iter::Map;
 use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
-
-#[derive(Copy, Clone, Debug)]
-// A range within a parallel gutter of windows
-pub struct Gutter {
-    pub start_id: Uuid,
-    pub end_id: Uuid,
-    pub side: Cardinal,
-}
-
-impl Gutter {
-    pub fn new(start_id: Uuid, end_id: Uuid, side: Cardinal) -> Self {
-        Self {
-            start_id,
-            end_id,
-            side,
-        }
-    }
-    pub fn start(&self) -> Caret {
-        Caret::new(self.start_id, self.side)
-    }
-
-    pub fn end(&self) -> Caret {
-        Caret::new(self.start_id, self.side)
-    }
-
-    pub fn location_on(&self, graph: &Graph) -> i32 {
-        let start_location = self.start().location_on(graph);
-        let end_location = self.end().location_on(graph);
-        match self.side.sign {
-            Positive => i32::min(start_location, end_location),
-            Negative => i32::max(start_location, end_location),
-        }
-    }
-
-    /// note: a and b must be supplied in order along the cross axis of the given side or this fails
-    pub fn is_connected_on(&self, graph: &Graph) -> bool {
-        if !graph.tiles[&self.start_id].is_window() {
-            false
-        } else {
-            self.start()
-                .navigate_gutter(graph)
-                .iter(Positive)
-                .any(|n| n.tile_id == self.end_id)
-        }
-    }
-}
 
 #[derive(Copy, Clone, Debug)]
 pub struct GutterNav<'a> {
@@ -84,9 +38,7 @@ impl Navigator for GutterNav<'_> {
     type Direction = Sign;
 
     fn location(&self) -> i32 {
-        self.graph.tiles[&self.tile_id]
-            .rect
-            .get_side_location(self.side)
+        self.graph.bounds[&self.node_id].location(self.side)
     }
 
     fn peek(&self, direction: Self::Direction) -> Option<Caret> {
@@ -95,11 +47,11 @@ impl Navigator for GutterNav<'_> {
             axis: !self.side.axis,
             sign: direction,
         };
-        self.graph.intra_surface_neighbourhoods[&self.tile_id][search_direction]
+        self.graph.intra_surface_neighbourhoods[&self.node_id][search_direction]
             .iter()
-            .filter(|id| self.graph.tiles[id].is_window())
+            .filter(|id| id.is_tile())
             .map(|&id| Caret::new(id, self.side))
-            .find(|c| c.location_on(self.graph) == location)
+            .find(|c| c.get_location(self.graph) == location)
     }
 
     fn next(&mut self, direction: Self::Direction) -> Option<Caret> {
@@ -117,8 +69,8 @@ impl Navigator for GutterNav<'_> {
         self
     }
 
-    fn go_to(&mut self, tile_id: Uuid) -> &mut Self {
-        self.tile_id = tile_id;
+    fn go_to(&mut self, node_id: NodeId) -> &mut Self {
+        self.node_id = node_id;
         self
     }
 
@@ -132,11 +84,11 @@ pub trait GutterIterExt
 where
     Self: Iterator<Item: Deref<Target = Caret>>,
 {
-    fn ids(self) -> Map<Self, fn(Self::Item) -> Uuid>
+    fn ids(self) -> Map<Self, fn(Self::Item) -> NodeId>
     where
         Self: Sized,
     {
-        self.map(|c| c.tile_id)
+        self.map(|c| c.node_id)
     }
 }
 
