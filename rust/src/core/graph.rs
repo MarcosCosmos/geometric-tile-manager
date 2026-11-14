@@ -1,7 +1,7 @@
-use crate::geometry::{Axis::*, AxisBounds, Bounds, Cardinal, Sign::*};
-use crate::navigation::Line;
+use crate::core::geometry::{Axis::*, AxisBounds, Bounds, Cardinal, Sign::*};
+use crate::core::navigation::Line;
+use crate::core::transform::TransformConstraints;
 use crate::result::Result;
-use crate::transform::TransformConstraints;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
@@ -12,7 +12,6 @@ pub struct TileId(Uuid);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct SurfaceId(Uuid);
-
 
 impl TileId {
     pub fn new() -> Self {
@@ -38,6 +37,10 @@ impl NodeId {
             NodeId::Tile(_) => true,
             _ => false,
         }
+    }
+
+    pub fn is_surface(&self) -> bool {
+        !self.is_tile()
     }
 
     pub fn unwrap_tile(self) -> TileId {
@@ -97,8 +100,13 @@ impl Neighbourhood {
         Self::default()
     }
     /// inserts the tile's id in order
-    pub fn insert<'a, F>(&mut self, direction: Cardinal, subject_id: NodeId, subject_bounds: &AxisBounds, bounds_lookup: F)
-    where
+    pub fn insert<'a, F>(
+        &mut self,
+        direction: Cardinal,
+        subject_id: NodeId,
+        subject_bounds: &AxisBounds,
+        bounds_lookup: F,
+    ) where
         F: Fn(&NodeId) -> &'a AxisBounds,
     {
         let cmp_direction = Cardinal {
@@ -166,7 +174,6 @@ impl IndexMut<Cardinal> for Neighbourhood {
     }
 }
 
-
 impl Graph {
     pub fn new() -> Self {
         Self::default()
@@ -192,7 +199,10 @@ impl Graph {
         let bounds: Bounds; // todo
         let id = TileId::new();
         self.bounds.insert(id.into(), bounds);
-        self.containing_surface.insert(id, self.containing_surface[&origin.start_id.unwrap_tile()]);
+        self.containing_surface.insert(
+            id,
+            self.containing_surface[&origin.positive_id.unwrap_tile()],
+        );
 
         // todo: all of this only works if strictly splitting the target. A more complicated strategy is needed for resizing all along the parallel
 

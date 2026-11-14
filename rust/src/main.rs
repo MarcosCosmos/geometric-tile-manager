@@ -1,10 +1,5 @@
-mod focus;
-pub mod geometry;
-pub mod graph;
-mod gutter;
-mod navigation;
+pub mod core;
 mod result;
-mod transform;
 
 fn main() {
     println!("Hello, world!");

@@ -1,6 +1,6 @@
-use crate::geometry::Axis::{Horizontal, Vertical};
-use crate::geometry::Sign::{Negative, Positive};
-use crate::navigation::Navigator;
+use crate::core::geometry::Axis::{Horizontal, Vertical};
+use crate::core::geometry::Sign::{Negative, Positive};
+use crate::core::navigation::CaretNavigation;
 use std::cmp::Ordering;
 use std::ops::{Index, IndexMut, Not};
 
@@ -101,6 +101,15 @@ impl AxisBounds {
         AxisBounds {
             origin: clamped_min,
             size: clamped_max - clamped_min,
+        }
+    }
+    /// creates a new axis bounds that strictly contains both the target bounds
+    pub fn span(&self, b: AxisBounds) -> AxisBounds {
+        let min = self.origin.min(b.size);
+        let max = (self.origin + self.size).max(b.origin + b.size);
+        AxisBounds {
+            origin: min,
+            size: max - min,
         }
     }
 }
@@ -212,5 +221,3 @@ pub const WEST: Cardinal = Cardinal {
     axis: Horizontal,
     sign: Negative,
 };
-
-

@@ -1,13 +1,12 @@
-use crate::geometry::Sign::{Negative, Positive};
-use crate::geometry::{Axis, Cardinal, Sign};
-use crate::graph::{Graph, NodeId};
-use crate::gutter::GutterNavigation;
-use crate::navigation::{Caret, Navigator};
+use crate::core::geometry::Sign::{Negative, Positive};
+use crate::core::geometry::{Axis, AxisBounds, Cardinal, Sign};
+use crate::core::graph::NodeId::Surface;
+use crate::core::graph::{Graph, NodeId};
+use crate::core::navigation::{Caret, CaretNavigation, Nav, Navigation};
 use std::ops::Deref;
-use crate::graph::NodeId::{Surface, Tile};
 
 pub struct FocusState {
-    inner: Option<Caret>,
+    target: Option<Caret>,
     negative_history: Vec<Caret>,
     positive_history: Vec<Caret>,
     history_axis: Axis,
@@ -16,7 +15,7 @@ pub struct FocusState {
 impl FocusState {
     pub fn new() -> Self {
         Self {
-            inner: None,
+            target: None,
             negative_history: Vec::new(),
             positive_history: Vec::new(),
             history_axis: Axis::Horizontal,
@@ -24,19 +23,19 @@ impl FocusState {
     }
 
     pub fn current(&self) -> Option<Caret> {
-        self.inner
+        self.target
     }
 
     /// checks if the current caret still exists in the graph, and sets it to none if so
     pub fn sanitize(&mut self, graph: &Graph) {
-        self.inner
+        self.target
             .take_if(|c| !graph.bounds.contains_key(&c.node_id));
     }
 
     /// returns none if there is no current focus
     pub fn try_navigate<'b>(&mut self, graph: &'b Graph) -> Option<FocusNav<'_, 'b>> {
         self.sanitize(graph);
-        if self.inner.is_some() {
+        if self.target.is_some() {
             Some(FocusNav { state: self, graph })
         } else {
             None
@@ -45,7 +44,7 @@ impl FocusState {
 
     pub fn navigate<'b>(&mut self, graph: &'b Graph, default: Caret) -> FocusNav<'_, 'b> {
         self.sanitize(graph);
-        self.inner.get_or_insert(default);
+        self.target.get_or_insert(default);
         FocusNav { state: self, graph }
     }
 }
@@ -80,19 +79,18 @@ impl<'a, 'b> FocusNav<'a, 'b> {
     }
 
     fn candidate_neighbours(&self, direction: Cardinal) -> &Vec<NodeId> {
-        let current = self.state.inner.unwrap();
+        let current = *self.deref();
         let candidates = &self.graph.intra_surface_neighbourhoods[&current.node_id][direction];
-        if candidates.len() == 1 && let Surface(home_id) = candidates[0] {
+        if candidates.len() == 1
+            && let Surface(home_id) = candidates[0]
+        {
             let neighbour_surfaces = &self.graph.inter_surface_neighbourhoods[&home_id][direction];
             if let Some(next_surface_id) =
                 self.nearest_by_centers(neighbour_surfaces, direction.axis)
             {
                 let distant_candidates =
                     &self.graph.intra_surface_neighbourhoods[&next_surface_id][direction];
-                if distant_candidates
-                    .iter()
-                    .any(|id| id.is_tile())
-                {
+                if distant_candidates.iter().any(|id| id.is_tile()) {
                     return &neighbour_surfaces;
                 }
             }
@@ -119,15 +117,15 @@ impl Deref for FocusNav<'_, '_> {
     type Target = Caret;
 
     fn deref(&self) -> &Self::Target {
-        self.state.inner.as_ref().unwrap()
+        self.state.target.as_ref().unwrap()
     }
 }
 
-impl<'a, 'b> Navigator for FocusNav<'_, '_> {
+impl<'a, 'b> Navigation for FocusNav<'_, '_> {
     type Direction = Cardinal;
 
     fn location(&self) -> i32 {
-        self.get_location(self.graph)
+        Nav::new(self.graph, *self.deref()).location()
     }
 
     fn peek(&self, direction: Cardinal) -> Option<Caret> {
@@ -141,7 +139,7 @@ impl<'a, 'b> Navigator for FocusNav<'_, '_> {
         {
             Some(previous)
         } else if direction.axis != self.side.axis
-            && let Some(caret) = self.navigate_gutter(self.graph).peek(direction.sign)
+            && let Some(caret) = Nav::new(self.graph, *self.deref()).peek(direction.sign)
         {
             Some(caret)
         } else if let Some(neighbour) = self.nearest_by_centers(candidates, direction.axis) {
@@ -171,10 +169,10 @@ impl<'a, 'b> Navigator for FocusNav<'_, '_> {
                 self.state.negative_history.clear();
                 self.state.positive_history.clear();
                 self.state.history_axis = direction.axis;
-                let current = self.state.inner?;
+                let current = self.state.target?;
                 self.history_mut(!direction.sign).push(current);
             }
-            self.state.inner = Some(destination);
+            self.state.target = Some(destination);
             Some(destination)
         } else {
             None
@@ -183,19 +181,23 @@ impl<'a, 'b> Navigator for FocusNav<'_, '_> {
 
     /// This allows arbitrary updates to the focus.
     /// Always clears the history
-    fn set_caret(&mut self, destination: Caret) -> &mut Self {
+    fn set_target(&mut self, target: Caret) {
         self.state.negative_history.clear();
         self.state.positive_history.clear();
-        self.state.inner = Some(destination);
-        self
+        self.state.target = Some(target);
     }
 
-    fn go_to(&mut self, node_id: NodeId) -> &mut Self {
-        self.set_caret(Caret::new(node_id, self.side))
+    fn bounds(&self) -> AxisBounds {
+        self.graph.bounds[&self.node_id][!self.side.axis]
+    }
+}
+
+impl CaretNavigation for FocusNav<'_, '_> {
+    fn set_node(&mut self, node_id: NodeId) {
+        self.set_target(Caret::new(node_id, self.side));
     }
 
-    fn face(&mut self, side: Cardinal) -> &mut Self {
-        self.state.inner.as_mut().unwrap().side = side;
-        self
+    fn set_side(&mut self, side: Cardinal) {
+        self.state.target.as_mut().unwrap().side = side;
     }
 }
