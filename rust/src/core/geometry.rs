@@ -1,6 +1,7 @@
 use crate::core::geometry::Axis::{Horizontal, Vertical};
 use crate::core::geometry::Sign::{Negative, Positive};
-use crate::core::navigation::CaretNavigation;
+use crate::core::graph::NodeId;
+use crate::core::navigation::{CaretInformationMut, Line};
 use std::cmp::Ordering;
 use std::ops::{Index, IndexMut, Not};
 
@@ -17,9 +18,9 @@ pub enum Sign {
 }
 
 #[derive(Copy, Clone, Debug, Default)]
-pub struct AxisBounds {
-    pub origin: i32,
-    pub size: i32,
+pub struct Bounds {
+    negative: i32,
+    positive: i32,
 }
 
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
@@ -47,43 +48,40 @@ impl Into<Ordering> for BoundsOrdering {
     }
 }
 
-impl AxisBounds {
-    fn location(&self, index: Sign) -> i32 {
-        match index {
-            Negative => self.origin,
-            Positive => self.origin + self.size,
-        }
+impl Bounds {
+    pub fn new(negative: i32, positive: i32) -> Self {
+        Self { negative, positive }
+    }
+    pub fn size(&self) -> i32 {
+        assert!(self.positive >= self.negative);
+        self.positive - self.negative
     }
 
     pub fn center(&self) -> f32 {
-        self.origin as f32 + (self.size as f32 / 2f32)
+        self.negative as f32 + (self.size() as f32 / 2f32)
     }
 
-    pub fn cmp(&self, other: &AxisBounds) -> BoundsOrdering {
-        assert!(self.size >= 0);
-        assert!(other.size >= 0);
-        let max = self.origin + self.size;
-        let other_max = other.origin + other.size;
-        if self.origin < other.origin {
-            if max < other.origin {
+    pub fn cmp(&self, other: &Bounds) -> BoundsOrdering {
+        if self.negative < other.negative {
+            if self.positive < other.negative {
                 BoundsOrdering::Before
-            } else if max < other_max {
+            } else if self.negative < other.positive {
                 BoundsOrdering::PartiallyBefore
             } else {
                 BoundsOrdering::Contains
             }
-        } else if self.origin > other.origin {
-            if self.origin > other_max {
+        } else if self.negative > other.negative {
+            if self.negative > other.positive {
                 BoundsOrdering::After
-            } else if max > other_max {
+            } else if self.positive > other.positive {
                 BoundsOrdering::PartiallyAfter
             } else {
                 BoundsOrdering::ContainedBy
             }
         } else {
-            if max < other_max {
+            if self.positive < other.positive {
                 BoundsOrdering::ContainedBy
-            } else if max > other_max {
+            } else if self.positive > other.positive {
                 BoundsOrdering::Contains
             } else {
                 BoundsOrdering::Parallel
@@ -93,31 +91,46 @@ impl AxisBounds {
 
     /// splits the target bounds into two portions:
     /// - the first is the portion of the bounds that lie inside these bounds, and the second is a delta that when added first results in the original.
-    pub fn clamp(self, container: AxisBounds) -> AxisBounds {
-        assert_ne!(self.cmp(&container), BoundsOrdering::Contains);
-        let container_max = container.origin + container.size;
-        let clamped_min = self.origin.clamp(container.origin, container_max);
-        let clamped_max = (self.origin + self.size).clamp(container.origin, container_max);
-        AxisBounds {
-            origin: clamped_min,
-            size: clamped_max - clamped_min,
+    pub fn clamp(self, other: &Bounds) -> Bounds {
+        assert_ne!(self.cmp(&other), BoundsOrdering::Contains);
+        Bounds {
+            negative: self.negative.clamp(other.negative, other.positive),
+            positive: self.positive.clamp(other.negative, other.positive),
         }
     }
     /// creates a new axis bounds that strictly contains both the target bounds
-    pub fn span(&self, b: AxisBounds) -> AxisBounds {
-        let min = self.origin.min(b.size);
-        let max = (self.origin + self.size).max(b.origin + b.size);
-        AxisBounds {
-            origin: min,
-            size: max - min,
+    pub fn span(&self, other: &Bounds) -> Bounds {
+        Bounds {
+            negative: self.negative.min(other.negative),
+            positive: self.positive.max(other.positive),
+        }
+    }
+}
+
+impl Index<Sign> for Bounds {
+    type Output = i32;
+
+    fn index(&self, index: Sign) -> &Self::Output {
+        match index {
+            Negative => &self.negative,
+            Positive => &self.positive,
+        }
+    }
+}
+
+impl IndexMut<Sign> for Bounds {
+    fn index_mut(&mut self, index: Sign) -> &mut Self::Output {
+        match index {
+            Negative => &mut self.negative,
+            Positive => &mut self.positive,
         }
     }
 }
 
 #[derive(Copy, Clone, Debug, Default)]
-pub struct Bounds {
-    pub horizontal: AxisBounds,
-    pub vertical: AxisBounds,
+pub struct RectBounds {
+    pub horizontal: Bounds,
+    pub vertical: Bounds,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -147,16 +160,8 @@ impl Cardinal {
     }
 }
 
-impl Bounds {
-    /// returns the location of the given side of the rect along the axis perpendicular to it's length
-    /// (this being the only axis for which there is one value and not two for that side)
-    pub fn location(&self, side: Cardinal) -> i32 {
-        self[side.axis].location(side.sign)
-    }
-}
-
-impl Index<Axis> for Bounds {
-    type Output = AxisBounds;
+impl Index<Axis> for RectBounds {
+    type Output = Bounds;
 
     fn index(&self, index: Axis) -> &Self::Output {
         match index {
@@ -166,12 +171,26 @@ impl Index<Axis> for Bounds {
     }
 }
 
-impl IndexMut<Axis> for Bounds {
+impl IndexMut<Axis> for RectBounds {
     fn index_mut(&mut self, index: Axis) -> &mut Self::Output {
         match index {
             Horizontal => &mut self.horizontal,
             Vertical => &mut self.vertical,
         }
+    }
+}
+
+impl Index<Cardinal> for RectBounds {
+    type Output = i32;
+
+    fn index(&self, index: Cardinal) -> &Self::Output {
+        &self[index.axis][index.sign]
+    }
+}
+
+impl IndexMut<Cardinal> for RectBounds {
+    fn index_mut(&mut self, index: Cardinal) -> &mut Self::Output {
+        &mut self[index.axis][index.sign]
     }
 }
 
