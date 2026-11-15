@@ -442,7 +442,7 @@ fn update_connections(
 
 
 
-    for opposing_id in opposites 
+    for opposing_id in opposites
     {
         let opposing_caret = Caret::new(opposing_id, !scope.side);
         let opposing_bounds = graph.info(opposing_caret).bounds();
