@@ -202,7 +202,7 @@ impl<'a, 'b> ElementNavigation for FocusContext<'_, '_> {
 
 impl CaretInformationMut for FocusContext<'_, '_> {
     fn set_node(&mut self, node_id: NodeId) {
-        self.set_target(Caret::new(node_id, self.side));
+        self.state.target.as_mut().unwrap().id = node_id;
     }
 
     fn set_side(&mut self, side: Cardinal) {
