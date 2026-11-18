@@ -1,24 +1,24 @@
-use crate::core::geometry::Axis::{Horizontal, Vertical};
-use crate::core::geometry::Sign::{Negative, Positive};
-use crate::core::graph::NodeId;
-use crate::core::navigation::{CaretInformationMut, Line};
+use crate::geometry::Axis::{Horizontal, Vertical};
+use crate::geometry::Sign::{Negative, Positive};
+use crate::query::NodeKey;
+use crate::query::QueryKey;
 use std::cmp::Ordering;
 use std::ops::{Index, IndexMut, Not};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Axis {
     Horizontal,
     Vertical,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Sign {
     Negative,
     Positive,
 }
 
-#[derive(Copy, Clone, Debug, Default)]
-pub struct Bounds {
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
+pub struct AxisBounds {
     negative: i32,
     positive: i32,
 }
@@ -48,7 +48,7 @@ impl Into<Ordering> for BoundsOrdering {
     }
 }
 
-impl Bounds {
+impl AxisBounds {
     pub fn new(negative: i32, positive: i32) -> Self {
         Self { negative, positive }
     }
@@ -61,7 +61,7 @@ impl Bounds {
         self.negative as f32 + (self.size() as f32 / 2f32)
     }
 
-    pub fn cmp(&self, other: &Bounds) -> BoundsOrdering {
+    pub fn cmp(&self, other: &AxisBounds) -> BoundsOrdering {
         if self.negative < other.negative {
             if self.positive < other.negative {
                 BoundsOrdering::Before
@@ -91,23 +91,23 @@ impl Bounds {
 
     /// splits the target bounds into two portions:
     /// - the first is the portion of the bounds that lie inside these bounds, and the second is a delta that when added first results in the original.
-    pub fn clamp(self, other: &Bounds) -> Bounds {
+    pub fn clamp(self, other: &AxisBounds) -> AxisBounds {
         assert_ne!(self.cmp(&other), BoundsOrdering::Contains);
-        Bounds {
+        AxisBounds {
             negative: self.negative.clamp(other.negative, other.positive),
             positive: self.positive.clamp(other.negative, other.positive),
         }
     }
     /// creates a new axis bounds that strictly contains both the target bounds
-    pub fn span(&self, other: &Bounds) -> Bounds {
-        Bounds {
+    pub fn span(&self, other: &AxisBounds) -> AxisBounds {
+        AxisBounds {
             negative: self.negative.min(other.negative),
             positive: self.positive.max(other.positive),
         }
     }
 }
 
-impl Index<Sign> for Bounds {
+impl Index<Sign> for AxisBounds {
     type Output = i32;
 
     fn index(&self, index: Sign) -> &Self::Output {
@@ -118,7 +118,7 @@ impl Index<Sign> for Bounds {
     }
 }
 
-impl IndexMut<Sign> for Bounds {
+impl IndexMut<Sign> for AxisBounds {
     fn index_mut(&mut self, index: Sign) -> &mut Self::Output {
         match index {
             Negative => &mut self.negative,
@@ -127,13 +127,29 @@ impl IndexMut<Sign> for Bounds {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default)]
-pub struct RectBounds {
-    pub horizontal: Bounds,
-    pub vertical: Bounds,
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
+pub struct AreaBounds {
+    horizontal: AxisBounds,
+    vertical: AxisBounds,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+impl AreaBounds {
+    pub fn new(horizontal: AxisBounds, vertical: AxisBounds) -> Self {
+        Self {
+            horizontal,
+            vertical,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct LineBounds {
+    pub side: Cardinal,
+    pub axis_bounds: AxisBounds,
+    pub side_location: i32,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 /// Usually associated with a side of a box
 pub struct Cardinal {
     pub axis: Axis,
@@ -160,8 +176,8 @@ impl Cardinal {
     }
 }
 
-impl Index<Axis> for RectBounds {
-    type Output = Bounds;
+impl Index<Axis> for AreaBounds {
+    type Output = AxisBounds;
 
     fn index(&self, index: Axis) -> &Self::Output {
         match index {
@@ -171,7 +187,7 @@ impl Index<Axis> for RectBounds {
     }
 }
 
-impl IndexMut<Axis> for RectBounds {
+impl IndexMut<Axis> for AreaBounds {
     fn index_mut(&mut self, index: Axis) -> &mut Self::Output {
         match index {
             Horizontal => &mut self.horizontal,
@@ -180,7 +196,7 @@ impl IndexMut<Axis> for RectBounds {
     }
 }
 
-impl Index<Cardinal> for RectBounds {
+impl Index<Cardinal> for AreaBounds {
     type Output = i32;
 
     fn index(&self, index: Cardinal) -> &Self::Output {
@@ -188,7 +204,7 @@ impl Index<Cardinal> for RectBounds {
     }
 }
 
-impl IndexMut<Cardinal> for RectBounds {
+impl IndexMut<Cardinal> for AreaBounds {
     fn index_mut(&mut self, index: Cardinal) -> &mut Self::Output {
         &mut self[index.axis][index.sign]
     }
@@ -240,3 +256,64 @@ pub const WEST: Cardinal = Cardinal {
     axis: Horizontal,
     sign: Negative,
 };
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+/// Usually associated with a corner of a box
+pub struct Diagonal {
+    horizontal: Sign,
+    vertical: Sign,
+}
+
+impl Not for Diagonal {
+    type Output = Self;
+    fn not(self) -> Self::Output {
+        Self {
+            horizontal: !self.horizontal,
+            vertical: !self.vertical,
+        }
+    }
+}
+
+impl Index<Axis> for Diagonal {
+    type Output = Sign;
+
+    fn index(&self, index: Axis) -> &Self::Output {
+        match index {
+            Horizontal => &self.horizontal,
+            Vertical => &self.vertical,
+        }
+    }
+}
+
+impl IndexMut<Axis> for Diagonal {
+    fn index_mut(&mut self, index: Axis) -> &mut Self::Output {
+        match index {
+            Horizontal => &mut self.horizontal,
+            Vertical => &mut self.vertical,
+        }
+    }
+}
+
+pub const NORTH_WEST: Diagonal = Diagonal {
+    horizontal: Negative,
+    vertical: Negative,
+};
+pub const NORTH_EAST: Diagonal = Diagonal {
+    horizontal: Positive,
+    vertical: Negative,
+};
+pub const SOUTH_EAST: Diagonal = Diagonal {
+    horizontal: Positive,
+    vertical: Positive,
+};
+pub const SOUTH_WEST: Diagonal = Diagonal {
+    horizontal: Negative,
+    vertical: Positive,
+};
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, QueryKey, NodeKey)]
+#[query(Self)]
+pub struct Point {
+    pub x: i32,
+    pub y: i32,
+}

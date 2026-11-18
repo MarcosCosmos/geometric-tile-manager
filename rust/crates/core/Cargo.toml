@@ -1,0 +1,14 @@
+[lib]
+
+[package]
+name = "core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+uuid = { version = "1.28.0", features = ["v4"] }
+itertools = { version = "0.15.0" }
+anyhow = "1.0.104"
+log = "0.4.35"
+querykey_derive = { path = "../querykey_derive" }
+nodekey_derive = { path = "../nodekey_derive" }
