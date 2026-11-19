@@ -1,38 +1,37 @@
 use crate::error::Error;
-use crate::error::Error::NotASingleNode;
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{Cardinal, LineBounds, Sign};
 use crate::graph::NodeId;
-use crate::query::line::{Line, LineLookup};
-use crate::query::neighbours::{NeighbourSurfaces, NeighbourTiles, NeighbourhoodInformation};
-use crate::query::node::NodeLookup;
-use crate::query::source::RawQuerySource;
-use crate::query::{
-    ElementInformation, ElementInformation1D, ElementInformationMut, ElementKind,
-    ElementNavigation, NodeKey, Query, QueryKey,
-};
+use crate::query::key::{NodeKey, QueryKey};
+use crate::query::line::Line;
+use crate::query::neighbours::{NeighbourTiles, NeighbourhoodInformation};
+use crate::query::node::NodeQuery;
+use crate::query::source::{QuerySource, RawQuerySource};
+use crate::query::{ElementInformation, ElementInformation1D, ElementKind, Navigation, NavigationMut, Query};
+use crate::query_impl;
+use markers_derive::QueryKey;
 use std::fmt::Debug;
-use std::hash::Hash;
 use std::iter::Map;
 use std::ops::Deref;
+use serde::{Deserialize, Serialize};
 
 /// A caret is a position on the side of a node.
 /// they provide the step function for navigating along the gutter of carets parallel to them.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, QueryKey)]
-#[query(N)]
-pub struct Caret<N = NodeId>
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
+pub struct Caret<Node = NodeId>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    pub id: N,
+    pub id: Node,
     pub side: Cardinal,
 }
 
-impl<N> Caret<N>
+impl<Node> Caret<Node>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    pub fn new(id: N, side: Cardinal) -> Self {
+    pub fn new(id: Node, side: Cardinal) -> Self {
         Self { id, side }
     }
 }
@@ -48,15 +47,27 @@ impl TryFrom<Line> for Caret {
         }
     }
 }
+impl<T> From<T> for Caret
+where
+    T: QueryKey<NodeKey = NodeId> + Deref<Target = Caret>,
+{
+    fn from(value: T) -> Self {
+        *value
+    }
+}
 
-pub trait CaretLookup: ElementInformation1D + Deref<Target = Caret> {
-    type NodeInformation: NodeLookup;
+query_impl! { <T> From<T> for Caret where T: QueryKey<NodeKey=NodeId> + Deref<Target=Caret> }
+
+query_impl! { TryFrom<Line> for Caret }
+
+pub trait CaretQuery: Deref<Target = Caret> {
+    type NodeQuery: NodeQuery;
     fn with_node(self, id: NodeId) -> Self;
 
     fn with_side(self, side: Cardinal) -> Self;
 }
 
-pub trait CaretInformationMut: ElementInformationMut + Deref<Target = Caret> {
+pub trait CaretNavigationMut: NavigationMut + Deref<Target = Caret> {
     fn set_node(&mut self, node_id: NodeId);
 
     fn set_side(&mut self, side: Cardinal);
@@ -79,8 +90,8 @@ impl ElementInformation1D for Query<'_, Caret> {
     }
 }
 
-impl<'a> CaretLookup for Query<'a, Caret> {
-    type NodeInformation = Query<'a, NodeId>;
+impl<'a> CaretQuery for Query<'a, Caret> {
+    type NodeQuery = Query<'a, NodeId>;
     fn with_node(mut self, id: NodeId) -> Self
     where
         Self: Sized,
@@ -98,7 +109,7 @@ impl<'a> CaretLookup for Query<'a, Caret> {
     }
 }
 
-impl ElementNavigation for Query<'_, Caret> {
+impl Navigation for Query<'_, Caret> {
     type Direction = Sign;
 
     fn peek(&self, direction: Sign) -> Option<Caret> {
@@ -118,18 +129,6 @@ impl ElementNavigation for Query<'_, Caret> {
     }
 }
 
-impl<'a> TryFrom<Query<'a, Line>> for Query<'a, Caret> {
-    type Error = Error<Line>;
-
-    fn try_from(value: Query<'a, Line>) -> Result<Self, Self::Error> {
-        if value[Negative] == value[Positive] {
-            Ok(value.into_end(Negative))
-        } else {
-            Err(NotASingleNode(*value))
-        }
-    }
-}
-
 pub trait CaretIterExt
 where
     Self: Iterator<Item: Deref<Target = Caret>>,
@@ -144,14 +143,14 @@ where
 
 impl<T: ?Sized> CaretIterExt for T where T: Iterator<Item: Deref<Target = Caret>> {}
 
-impl<'a> From<Query<'a, NeighbourTiles>> for Query<'a, Caret> {
-    fn from(value: Query<'a, NeighbourTiles>) -> Self {
-        value.context.query(**value)
-    }
-}
+impl<T, Node> QuerySource<Caret<Node>> for T
+where
+    T: RawQuerySource + QuerySource<Node, OutKey = NodeId>,
+    Node: NodeKey,
+{
+    type OutKey = Caret;
 
-impl<'a> From<Query<'a, NeighbourSurfaces>> for Query<'a, Caret> {
-    fn from(value: Query<'a, NeighbourSurfaces>) -> Self {
-        value.context.query(**value)
+    fn try_query(&self, key: Caret<Node>) -> anyhow::Result<Query<Self::OutKey>> {
+        Ok(self.query(Caret::new(*self.try_query(key.id)?, key.side)))
     }
 }

@@ -1,24 +1,22 @@
-use crate::graph::NodeId;
 use std::fmt;
-use std::fmt::{Debug, Formatter, write};
-use uuid::Uuid;
+use std::fmt::{Debug, Formatter};
 
 #[derive(Debug)]
-pub enum Error<N>
+pub enum Error<Key>
 where
-    N: Debug,
+    Key: Debug,
 {
-    NodeNotFound(N),
-    NodeAlreadyExists(N),
-    MultipleSurfaces(N),
-    NotFullyConnected(N),
-    NotASingleNode(N),
-    NoNeighbours(N),
+    NodeNotFound(Key),
+    NodeAlreadyExists(Key),
+    MultipleSurfaces(Key),
+    NotFullyConnected(Key),
+    NotASingleNode(Key),
+    NoNeighbours(Key),
 }
 
-impl<N> fmt::Display for Error<N>
+impl<Key> fmt::Display for Error<Key>
 where
-    N: Debug,
+    Key: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -53,4 +51,4 @@ where
     }
 }
 
-impl<N> std::error::Error for Error<N> where N: Debug {}
+impl<Key> std::error::Error for Error<Key> where Key: Debug {}

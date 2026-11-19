@@ -7,42 +7,44 @@ use crate::geometry::{
 };
 use crate::graph::NodeId;
 use crate::query::caret::Caret;
-use crate::query::iter::ElementIteration;
-use crate::query::line::{Line, LineLookup};
-use crate::query::node::NodeLookup;
-use crate::query::selection::SegmentedContainer;
-use crate::query::source::RawQuerySource;
+use crate::query::iter::QueryIteration;
+use crate::query::key::NodeKey;
+use crate::query::line::{Line, LineQuery};
+use crate::query::node::NodeQuery;
+use crate::query::selection::SegmentedArea;
+use crate::query::source::{QuerySource, RawQuerySource};
 use crate::query::{
     ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GroupInformation,
-    NodeKey, Query, QueryKey,
+    Query, QueryKey,
 };
+use crate::query_impl;
+use markers_derive::QueryKey;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::Debug;
-use std::hash::Hash;
-use std::ops::{Deref, Index, IndexMut};
+use std::ops::{Index, IndexMut};
+use serde::{Deserialize, Serialize};
 
 /// Generally dividers will be clean lines that don't intersect any tiles,
 /// but the start or end may or may not result in cutting through some tiles
 /// Note: it is possible for a transform container to start and end with the same pair of ids and have no dividers.
 ///     in this case it is a single row/column or even single tile.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, QueryKey)]
-#[query(N)]
-pub struct Area<N = NodeId>
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
+pub struct Area<Node = NodeId>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    pub north_west: N,
-    pub north_east: N,
-    pub south_west: N,
-    pub south_east: N,
+    pub north_west: Node,
+    pub north_east: Node,
+    pub south_west: Node,
+    pub south_east: Node,
 }
 
-impl<N> From<N> for Area<N>
+impl<Node> From<Node> for Area<Node>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    fn from(value: N) -> Self {
+    fn from(value: Node) -> Self {
         Area {
             north_west: value,
             north_east: value,
@@ -52,11 +54,13 @@ where
     }
 }
 
-impl<N> Area<N>
+query_impl! { From<NodeId> for Area }
+
+impl<Node> Area<Node>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    pub fn new(north_west: N, north_east: N, south_west: N, south_east: N) -> Self {
+    pub fn new(north_west: Node, north_east: Node, south_west: Node, south_east: Node) -> Self {
         Self {
             north_west,
             north_east,
@@ -66,11 +70,11 @@ where
     }
 }
 
-impl<N> Index<Diagonal> for Area<N>
+impl<Node> Index<Diagonal> for Area<Node>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    type Output = N;
+    type Output = Node;
 
     fn index(&self, index: Diagonal) -> &Self::Output {
         match index {
@@ -94,9 +98,9 @@ where
     }
 }
 
-impl<N> IndexMut<Diagonal> for Area<N>
+impl<Node> IndexMut<Diagonal> for Area<Node>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
     fn index_mut(&mut self, index: Diagonal) -> &mut Self::Output {
         match index {
@@ -120,14 +124,14 @@ where
     }
 }
 
-pub trait AreaInformation: ElementInformation2D {
-    type LineInformation: LineLookup;
-    type NodeInformation: NodeLookup;
-    fn into_side(self, side: Cardinal) -> Self::LineInformation;
-    fn into_corner(self, corner: Diagonal) -> Self::NodeInformation;
+pub trait AreaQuery: ElementInformation2D {
+    type LineQuery: LineQuery;
+    type NodeQuery: NodeQuery;
+    fn into_side(self, side: Cardinal) -> Self::LineQuery;
+    fn into_corner(self, corner: Diagonal) -> Self::NodeQuery;
 
-    fn into_segmented(self, start_side: Cardinal) -> SegmentedContainer {
-        SegmentedContainer::new(self.into_segments(start_side).collect(), start_side.axis)
+    fn into_segmented(self, start_side: Cardinal) -> SegmentedArea {
+        SegmentedArea::new(self.into_segments(start_side).collect(), start_side.axis)
     }
 
     fn into_validated(self) -> Result<Self, Error<Self::Target>>
@@ -179,7 +183,6 @@ impl ElementInformation2D for Query<'_, Area> {
 }
 
 impl<'a> GroupInformation for Query<'a, Area> {
-    type NodeInformation = Query<'a, NodeId>;
 
     fn is_connected(&self) -> bool {
         self.into_side(NORTH).is_connected()
@@ -189,12 +192,12 @@ impl<'a> GroupInformation for Query<'a, Area> {
     }
 }
 
-impl<'a> AreaInformation for Query<'a, Area> {
-    type LineInformation = Query<'a, Line>;
+impl<'a> AreaQuery for Query<'a, Area> {
+    type LineQuery = Query<'a, Line>;
 
-    type NodeInformation = Query<'a, NodeId>;
+    type NodeQuery = Query<'a, NodeId>;
 
-    fn into_side(self, side: Cardinal) -> Self::LineInformation {
+    fn into_side(self, side: Cardinal) -> Self::LineQuery {
         self.context.query(match side {
             Cardinal {
                 axis: Horizontal,
@@ -215,7 +218,7 @@ impl<'a> AreaInformation for Query<'a, Area> {
         })
     }
 
-    fn into_corner(self, corner: Diagonal) -> Self::NodeInformation {
+    fn into_corner(self, corner: Diagonal) -> Self::NodeQuery {
         self.context.query(self[corner])
     }
 
@@ -390,8 +393,21 @@ impl<'a> AreaInformation for Query<'a, Area> {
     // }
 }
 
-impl<'a> From<Query<'a, NodeId>> for Query<'a, Area> {
-    fn from(value: Query<'a, NodeId>) -> Self {
-        value.context.query((*value).into())
+impl<T, Node> QuerySource<Area<Node>> for T
+where
+    T: RawQuerySource + QuerySource<Node, OutKey = NodeId>,
+    Node: NodeKey,
+{
+    type OutKey = Area;
+
+    fn try_query(&self, key: Area<Node>) -> anyhow::Result<Query<Self::OutKey>> {
+        Ok(self
+            .query(Area {
+                north_west: *self.try_query(key.north_west)?,
+                north_east: *self.try_query(key.north_east)?,
+                south_east: *self.try_query(key.south_east)?,
+                south_west: *self.try_query(key.south_west)?,
+            })
+            .into_validated()?)
     }
 }

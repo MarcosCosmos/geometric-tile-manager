@@ -1,14 +1,14 @@
 use crate::geometry::Sign::{Negative, Positive};
-use crate::geometry::{Axis, Cardinal, LineBounds, Sign};
+use crate::geometry::{Axis, Cardinal, Sign};
 use crate::graph::{Graph, NodeId};
-use crate::query::caret::{Caret, CaretInformationMut};
+use crate::query::caret::{Caret, CaretNavigationMut};
 use crate::query::neighbours::{
     NeighbourSurfaces, NeighbourTiles, NeighbourhoodInformation, Neighbours,
 };
 use crate::query::source::{QuerySource, RawQuerySource};
 use crate::query::{
-    ElementInformation, ElementInformation1D, ElementInformationMut, ElementKind,
-    ElementNavigation, ElementNavigationMut, Query,
+    ElementInformation, ElementKind,
+    Navigation, NavigationMut, Query,
 };
 use std::ops::Deref;
 use uuid::Uuid;
@@ -41,23 +41,23 @@ impl FocusState {
     }
 
     /// returns none if there is no current focus
-    pub fn try_navigate<'b>(&mut self, graph: &'b Graph) -> Option<FocusContext<'_, 'b>> {
+    pub fn try_navigate<'b>(&mut self, graph: &'b Graph) -> Option<FocusNavigator<'_, 'b>> {
         self.sanitize(graph);
         if self.target.is_some() {
-            Some(FocusContext { state: self, graph })
+            Some(FocusNavigator { state: self, graph })
         } else {
             None
         }
     }
 
-    pub fn navigate<'b>(&mut self, graph: &'b Graph, default: Caret) -> FocusContext<'_, 'b> {
+    pub fn navigate<'b>(&mut self, graph: &'b Graph, default: Caret) -> FocusNavigator<'_, 'b> {
         self.sanitize(graph);
         self.target.get_or_insert(default);
-        FocusContext { state: self, graph }
+        FocusNavigator { state: self, graph }
     }
 }
 
-pub struct FocusContext<'a, 'b> {
+pub struct FocusNavigator<'a, 'b> {
     state: &'a mut FocusState,
     graph: &'b Graph,
 }
@@ -71,7 +71,7 @@ pub struct FocusContext<'a, 'b> {
 ///
 /// Note: the navigator is a short-lived controller that wraps an internal state and an immutable graph reference, so that said graph reference can be freely released.
 /// todo: this may potentially manage shrinking and expanding selection gutters about the focus in future
-impl<'a, 'b> FocusContext<'a, 'b> {
+impl<'a, 'b> FocusNavigator<'a, 'b> {
     fn history(&self, sign: Sign) -> &Vec<Caret> {
         match sign {
             Negative => &self.state.negative_history,
@@ -100,7 +100,7 @@ impl<'a, 'b> FocusContext<'a, 'b> {
     }
 }
 
-impl Deref for FocusContext<'_, '_> {
+impl Deref for FocusNavigator<'_, '_> {
     type Target = Caret;
 
     fn deref(&self) -> &Self::Target {
@@ -108,29 +108,7 @@ impl Deref for FocusContext<'_, '_> {
     }
 }
 
-impl ElementInformation for FocusContext<'_, '_> {
-    fn kind(&self) -> ElementKind {
-        todo!()
-    }
-}
-
-impl ElementInformationMut for FocusContext<'_, '_> {
-    /// This allows arbitrary updates to the focus.
-    /// Always clears the history
-    fn set_target(&mut self, target: Caret) {
-        self.state.negative_history.clear();
-        self.state.positive_history.clear();
-        self.state.target = Some(target);
-    }
-}
-
-impl ElementInformation1D for FocusContext<'_, '_> {
-    fn bounds(&self) -> LineBounds {
-        self.graph.query(*self.deref()).bounds()
-    }
-}
-
-impl<'a, 'b> ElementNavigation for FocusContext<'_, '_> {
+impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
     type Direction = Cardinal;
     fn peek(&self, direction: Cardinal) -> Option<Caret> {
         let current = **self;
@@ -192,7 +170,7 @@ impl<'a, 'b> ElementNavigation for FocusContext<'_, '_> {
     }
 }
 
-impl CaretInformationMut for FocusContext<'_, '_> {
+impl CaretNavigationMut for FocusNavigator<'_, '_> {
     fn set_node(&mut self, node_id: NodeId) {
         self.state.target.as_mut().unwrap().id = node_id;
     }
@@ -202,7 +180,7 @@ impl CaretInformationMut for FocusContext<'_, '_> {
     }
 }
 
-impl ElementNavigationMut for FocusContext<'_, '_> {
+impl NavigationMut for FocusNavigator<'_, '_> {
     /// Returns none if there is no neighbour to focus in the given direction
     /// Note: if the result is none, the current focus is unchanged
     fn next(&mut self, direction: Cardinal) -> Option<&mut Self> {
@@ -228,5 +206,13 @@ impl ElementNavigationMut for FocusContext<'_, '_> {
         } else {
             None
         }
+    }
+
+    /// This allows arbitrary updates to the focus.
+    /// Always clears the history
+    fn set_target(&mut self, target: Caret) {
+        self.state.negative_history.clear();
+        self.state.positive_history.clear();
+        self.state.target = Some(target);
     }
 }

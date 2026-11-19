@@ -3,12 +3,18 @@ use crate::error::Error::NotASingleNode;
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{AreaBounds, Cardinal};
 use crate::graph::NodeId;
-use crate::query::area::{Area, AreaInformation};
-use crate::query::caret::{Caret, CaretLookup};
+use crate::query::area::{Area, AreaQuery};
+use crate::query::caret::{Caret, CaretQuery};
 use crate::query::line::Line;
 use crate::query::source::RawQuerySource;
 use crate::query::{ElementInformation, ElementInformation2D, ElementKind, Query};
+use crate::query_impl;
 
+impl From<Caret> for NodeId {
+    fn from(value: Caret) -> Self {
+        value.id
+    }
+}
 impl TryFrom<Line> for NodeId {
     type Error = Error<Line>;
 
@@ -36,9 +42,11 @@ impl<'a> TryFrom<Area> for NodeId {
     }
 }
 
-pub trait NodeLookup: ElementInformation2D {
-    type CaretInformation: CaretLookup;
-    type AreaInformation: AreaInformation;
+query_impl! {From<Caret> | TryFrom<Line | Area> for NodeId}
+
+pub trait NodeQuery: ElementInformation2D {
+    type CaretInformation: CaretQuery;
+    type AreaInformation: AreaQuery;
     fn into_side(self, side: Cardinal) -> Self::CaretInformation;
     fn into_surface_of(self) -> Self;
 }
@@ -59,7 +67,7 @@ impl ElementInformation2D for Query<'_, NodeId> {
     }
 }
 
-impl<'a> NodeLookup for Query<'a, NodeId> {
+impl<'a> NodeQuery for Query<'a, NodeId> {
     type CaretInformation = Query<'a, Caret>;
     type AreaInformation = Query<'a, Area>;
 
@@ -75,27 +83,5 @@ impl<'a> NodeLookup for Query<'a, NodeId> {
                 .copied()
                 .unwrap_or(self.key),
         )
-    }
-}
-
-impl<'a> From<Query<'a, Caret>> for Query<'a, NodeId> {
-    fn from(value: Query<'a, Caret>) -> Self {
-        value.context.query(value.id)
-    }
-}
-
-impl<'a> TryFrom<Query<'a, Line>> for Query<'a, NodeId> {
-    type Error = Error<Line>;
-
-    fn try_from(value: Query<'a, Line>) -> Result<Self, Self::Error> {
-        (*value).try_into().map(|id| value.context.query(id))
-    }
-}
-
-impl<'a> TryFrom<Query<'a, Area>> for Query<'a, NodeId> {
-    type Error = Error<Area>;
-
-    fn try_from(value: Query<'a, Area>) -> Result<Self, Self::Error> {
-        (*value).try_into().map(|id| value.context.query(id))
     }
 }

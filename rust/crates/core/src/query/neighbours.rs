@@ -1,12 +1,15 @@
 use crate::geometry::Cardinal;
 use crate::graph::{Graph, NodeId};
 use crate::query::caret::Caret;
-use crate::query::node::NodeLookup;
-use crate::query::source::RawQuerySource;
-use crate::query::{ElementInformation, ElementKind, NodeKey, Query, QueryKey};
+use crate::query::key::NodeKey;
+use crate::query::node::NodeQuery;
+use crate::query::source::{QuerySource, RawQuerySource};
+use crate::query::{ElementInformation, ElementKind, Query, QueryKey};
+use crate::query_impl;
+use markers_derive::QueryKey;
 use std::fmt::Debug;
-use std::hash::Hash;
 use std::ops::Deref;
+use serde::{Deserialize, Serialize};
 
 pub trait NeighbourhoodInformation<'a, T>
 where
@@ -15,73 +18,92 @@ where
     fn items(&self) -> &'a [NodeId];
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, QueryKey)]
-#[query(N)]
-pub struct NeighbourTiles<N = NodeId>(pub Caret<N>)
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
+pub struct NeighbourTiles<Node = NodeId>(pub Caret<Node>)
 where
-    N: NodeKey;
+    Node: NodeKey;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, QueryKey)]
-#[query(N)]
-pub struct NeighbourSurfaces<N = NodeId>(pub Caret<N>)
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
+pub struct NeighbourSurfaces<Node = NodeId>(pub Caret<Node>)
 where
-    N: NodeKey;
+    Node: NodeKey;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, QueryKey)]
-#[query(N)]
-pub enum Neighbours<N = NodeId>
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
+pub enum Neighbours<Node = NodeId>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    Tiles(NeighbourTiles<N>),
-    Surfaces(NeighbourSurfaces<N>),
+    Tiles(NeighbourTiles<Node>),
+    Surfaces(NeighbourSurfaces<Node>),
 }
 
-impl<N> From<NeighbourTiles<N>> for Neighbours<N>
+impl<Node> From<NeighbourTiles<Node>> for Neighbours<Node>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    fn from(value: NeighbourTiles<N>) -> Self {
+    fn from(value: NeighbourTiles<Node>) -> Self {
         Self::Tiles(value)
     }
 }
 
-impl<N> From<NeighbourSurfaces<N>> for Neighbours<N>
+impl<Node> From<NeighbourSurfaces<Node>> for Neighbours<Node>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    fn from(value: NeighbourSurfaces<N>) -> Self {
+    fn from(value: NeighbourSurfaces<Node>) -> Self {
         Self::Surfaces(value)
     }
 }
 
-impl<N> Deref for NeighbourTiles<N>
+impl<Node> From<Caret<Node>> for NeighbourTiles<Node>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    type Target = Caret<N>;
+    fn from(value: Caret<Node>) -> Self {
+        Self(value)
+    }
+}
+
+impl<Node> From<Caret<Node>> for NeighbourSurfaces<Node>
+where
+    Node: NodeKey,
+{
+    fn from(value: Caret<Node>) -> Self {
+        Self(value)
+    }
+}
+
+query_impl! { From<Caret> for NeighbourTiles }
+query_impl! { From<Caret> for NeighbourSurfaces }
+query_impl! { From<NeighbourTiles | NeighbourSurfaces> for Neighbours }
+
+impl<Node> Deref for NeighbourTiles<Node>
+where
+    Node: NodeKey,
+{
+    type Target = Caret<Node>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<N> Deref for NeighbourSurfaces<N>
+impl<Node> Deref for NeighbourSurfaces<Node>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    type Target = Caret<N>;
+    type Target = Caret<Node>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<N> Deref for Neighbours<N>
+impl<Node> Deref for Neighbours<Node>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    type Target = Caret<N>;
+    type Target = Caret<Node>;
 
     fn deref(&self) -> &Self::Target {
         match self {
@@ -128,30 +150,6 @@ impl<'a> NeighbourhoodInformation<'a, Neighbours> for Query<'a, Neighbours> {
     fn items(&self) -> &'a [NodeId] {
         let target = self.context.query(self.id).into_surface_of();
         &self.context.surface_neighbourhoods[&target][self.side]
-    }
-}
-
-impl<'a> From<Query<'a, Caret>> for Query<'a, NeighbourTiles> {
-    fn from(value: Query<'a, Caret>) -> Self {
-        value.context.query(NeighbourTiles(*value))
-    }
-}
-
-impl<'a> From<Query<'a, Caret>> for Query<'a, NeighbourSurfaces> {
-    fn from(value: Query<'a, Caret>) -> Self {
-        value.context.query(NeighbourSurfaces(*value))
-    }
-}
-
-impl<'a> From<Query<'a, NeighbourTiles>> for Query<'a, Neighbours> {
-    fn from(value: Query<'a, NeighbourTiles>) -> Self {
-        value.context.query((*value).into())
-    }
-}
-
-impl<'a> From<Query<'a, NeighbourSurfaces>> for Query<'a, Neighbours> {
-    fn from(value: Query<'a, NeighbourSurfaces>) -> Self {
-        value.context.query((*value).into())
     }
 }
 
@@ -213,5 +211,35 @@ where
     fn into_iter(self) -> Self::IntoIter {
         let side: Cardinal = !(**self).side;
         NeighbourCaretIter::<'a, _>::new(self.context, self.into().into_iter(), side)
+    }
+}
+
+impl<T, Node> QuerySource<NeighbourTiles<Node>> for T
+where
+    T: RawQuerySource + QuerySource<Node, OutKey = NodeId>,
+    Node: NodeKey,
+{
+    type OutKey = NeighbourTiles;
+
+    fn try_query(&self, key: NeighbourTiles<Node>) -> anyhow::Result<Query<Self::OutKey>> {
+        Ok(self.query(NeighbourTiles(Caret::new(
+            *self.try_query(key.id)?,
+            key.side,
+        ))))
+    }
+}
+
+impl<T, Node> QuerySource<NeighbourSurfaces<Node>> for T
+where
+    T: RawQuerySource + QuerySource<Node, OutKey = NodeId>,
+    Node: NodeKey,
+{
+    type OutKey = NeighbourSurfaces;
+
+    fn try_query(&self, key: NeighbourSurfaces<Node>) -> anyhow::Result<Query<Self::OutKey>> {
+        Ok(self.query(NeighbourSurfaces(Caret::new(
+            *self.try_query(key.id)?,
+            key.side,
+        ))))
     }
 }

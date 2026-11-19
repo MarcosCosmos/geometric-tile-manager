@@ -1,35 +1,19 @@
 pub mod area;
 pub mod caret;
-pub mod focus;
 pub mod iter;
+pub mod key;
 pub mod line;
 pub mod neighbours;
 pub mod node;
 pub mod selection;
 pub mod source;
-
-pub use querykey_derive::QueryKey;
+pub mod point;
 
 use crate::geometry::{AreaBounds, LineBounds};
-use crate::graph::Graph;
-use crate::query::area::AreaInformation;
+use crate::graph::{Graph, NodeId};
+use crate::query::key::QueryKey;
 use std::fmt::Debug;
-use std::hash::Hash;
 use std::ops::{Deref, Not};
-use uuid::Uuid;
-
-pub trait QueryKey: Sized + Copy + Clone + Debug + Eq {
-    type NodeKey: NodeKey;
-}
-
-pub use nodekey_derive::NodeKey;
-
-pub trait NodeKey: QueryKey {}
-
-impl QueryKey for Uuid {
-    type NodeKey = Self;
-}
-impl NodeKey for Uuid {}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ElementKind {
@@ -38,13 +22,14 @@ pub enum ElementKind {
     Mixed,
 }
 
+// todo: add serialisation requirement to output the results once other testing has started.
+pub trait GraphQuery: Deref<Target: QueryKey> + Sized {}
+
 pub trait ElementInformation: Deref<Target: QueryKey> + Sized {
     fn kind(&self) -> ElementKind;
 }
 
-pub trait ElementInformationMut: ElementInformation {
-    fn set_target(&mut self, target: Self::Target);
-}
+
 
 pub trait ElementInformation1D: ElementInformation {
     fn bounds(&self) -> LineBounds;
@@ -54,19 +39,23 @@ pub trait ElementInformation2D: ElementInformation {
     fn bounds(&self) -> AreaBounds;
 }
 
-pub trait GroupInformation: ElementInformation + TryInto<Self::NodeInformation> {
-    type NodeInformation;
+pub trait GroupInformation: ElementInformation {
     fn is_connected(&self) -> bool;
 }
 
-pub trait ElementNavigation: ElementInformation {
+pub trait GroupQuery: GroupInformation + TryInto<Self::NodeQuery> {
+    type NodeQuery;
+}
+
+pub trait Navigation: Deref<Target: QueryKey> + Sized {
     type Direction: Copy + Not<Output = Self::Direction>;
 
     fn peek(&self, direction: Self::Direction) -> Option<Self::Target>;
 }
 
-pub trait ElementNavigationMut: ElementNavigation {
+pub trait NavigationMut: Navigation {
     fn next(&mut self, direction: Self::Direction) -> Option<&mut Self>;
+    fn set_target(&mut self, target: Self::Target);
 }
 
 /// A transparent wrapper struct that facilitates que functionally for types, like Caret or Line, that have que related functionality but shouldn't be stored with a persistent reference to the graph.
@@ -79,6 +68,7 @@ where
     context: &'a Graph,
     key: Key,
 }
+
 
 impl<'a, Key> Query<'a, Key>
 where
@@ -98,4 +88,10 @@ where
     fn deref(&self) -> &Self::Target {
         &self.key
     }
+}
+
+impl<'a, Key> GraphQuery for Query<'a, Key> where Key: QueryKey {}
+
+impl<'a, Key> GroupQuery for Query<'a, Key> where Self : GroupInformation, Key: QueryKey, Query<'a, NodeId>: From<Query<'a, Key>> {
+    type NodeQuery = Query<'a, NodeId>;
 }

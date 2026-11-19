@@ -1,66 +1,17 @@
-use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{Axis, AxisBounds, BoundsOrdering, Cardinal, Sign};
 use crate::graph::{Graph, NodeId};
 use crate::query::ElementInformation1D;
-use crate::query::ElementNavigation;
-use crate::query::area::{Area, AreaInformation};
-use crate::query::caret::{Caret, CaretIterExt, CaretLookup};
-use crate::query::iter::ElementIteration;
-use crate::query::line::{Line, LineLookup};
-use crate::query::node::NodeLookup;
+use crate::query::Navigation;
+use crate::query::area::{Area, AreaQuery};
+use crate::query::caret::{Caret, CaretIterExt, CaretQuery};
+use crate::query::iter::QueryIteration;
+use crate::query::line::{Line, LineQuery};
 use crate::query::source::RawQuerySource;
 use crate::query::{
-    ElementInformation, ElementInformation2D, ElementKind, GroupInformation, Query,
+    ElementInformation, ElementInformation2D, ElementKind, GroupInformation,
 };
-use std::cmp::PartialEq;
-
-fn finalize_gutter(graph: &Graph, gutter: &mut Line, constraints: TransformConstraints) {
-    match constraints {
-        TransformConstraints::Minimal => {}
-        TransformConstraints::Maximal => {
-            if let Some(id) = graph
-                .query(*gutter)
-                .into_end(Negative)
-                .into_iter(Negative)
-                .ids()
-                .last()
-            {
-                gutter[Negative] = id;
-            }
-            if let Some(id) = graph
-                .query(*gutter)
-                .into_end(Positive)
-                .into_iter(Positive)
-                .ids()
-                .last()
-            {
-                gutter[Positive] = id;
-            }
-        }
-        TransformConstraints::OutwardMinimal => {
-            let (cross_neg, cross_pos) = gutter.side.perpendicular_directions();
-            if let Some(c) = graph
-                .query(*gutter)
-                .into_end(Negative)
-                .into_iter(Negative)
-                .inclusive()
-                .find(|c| c.with_side(cross_neg).peek(gutter.side.sign).is_some())
-            {
-                gutter[Negative] = c.id;
-            }
-            if let Some(c) = graph
-                .query(*gutter)
-                .into_end(Positive)
-                .into_iter(Positive)
-                .inclusive()
-                .find(|c| c.with_side(cross_pos).peek(gutter.side.sign).is_some())
-            {
-                gutter[Positive] = c.id;
-            }
-        }
-    }
-}
+use crate::query::selection::SegmentedArea;
 
 /// low-level resizing is always done with one side fixed in place (only the non-anchored side actually moves)
 fn transform_node(
@@ -72,17 +23,17 @@ fn transform_node(
 ) {
     graph.bounds.get_mut(&node_id).unwrap()[axis] = new_bounds;
     if graph.query(node_id).kind() == ElementKind::Surface {
-        let container = graph
+        let area = graph
             .query(Area::from(node_id))
             .into_segmented(Cardinal::new(axis, Positive));
-        transform_container(graph, &container, new_bounds, packing_tiebreaker);
+        transform_area(graph, &area, new_bounds, packing_tiebreaker);
     }
 }
 
 /// low-level resizing is always done with one side fixed in place (only the non-anchored side actually moves)
-fn transform_container(
+fn transform_area(
     graph: &mut Graph,
-    container: &SegmentedContainer,
+    container: &SegmentedArea,
     new_bounds: AxisBounds,
     packing_tiebreaker: Sign,
 ) {
@@ -173,7 +124,7 @@ fn transform_container(
             .collect::<Vec<_>>()
         {
             let subcontainer = graph.query(cross_segment).into_segmented(container.axis);
-            transform_container(graph, &subcontainer, segment_bounds, packing_tiebreaker);
+            transform_area(graph, &subcontainer, segment_bounds, packing_tiebreaker);
         }
     }
 }

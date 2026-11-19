@@ -1,41 +1,39 @@
 use crate::error::Error;
 use crate::geometry::{
-    Axis::*, Cardinal, LineBounds, NORTH, NORTH_EAST, NORTH_WEST, SOUTH_EAST, SOUTH_WEST, Sign,
-    Sign::*,
+    Axis::*, Cardinal, LineBounds, NORTH_EAST, NORTH_WEST, SOUTH_EAST, SOUTH_WEST, Sign, Sign::*,
 };
-use crate::graph::{Graph, NodeId};
-use crate::query::area::{Area, AreaInformation};
-use crate::query::caret::{Caret, CaretLookup};
-use crate::query::iter::ElementIteration;
-use crate::query::node::NodeLookup;
-use crate::query::selection::SelectionArea;
-use crate::query::source::RawQuerySource;
-use crate::query::{
-    ElementInformation, ElementInformation1D, ElementInformationMut, ElementKind,
-    ElementNavigation, GroupInformation, NodeKey, Query, QueryKey,
-};
+use crate::graph::NodeId;
+use crate::query::area::{Area, AreaQuery};
+use crate::query::caret::{Caret, CaretQuery};
+use crate::query::iter::QueryIteration;
+use crate::query::key::{NodeKey, QueryKey};
+use crate::query::node::NodeQuery;
+use crate::query::selection::SelectionDetails;
+use crate::query::source::{QuerySource, RawQuerySource};
+use crate::query::{ElementInformation, ElementInformation1D, ElementKind, Navigation, GroupInformation, Query, NavigationMut};
+use crate::query_impl;
+use markers_derive::QueryKey;
 use std::fmt::Debug;
-use std::hash::Hash;
 use std::ops::{Deref, Index, IndexMut};
+use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, QueryKey)]
-#[query(N)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
 // As in, a line between two parallel Carets.
 // This line may or may not be fully "connected" (without cutting through the interior of any tiles)
-pub struct Line<N = NodeId>
+pub struct Line<Node = NodeId>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    negative_id: N,
-    positive_id: N,
+    negative_id: Node,
+    positive_id: Node,
     pub side: Cardinal,
 }
 
-impl<N> Line<N>
+impl<Node> Line<Node>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    pub fn new(negative_id: N, positive_id: N, side: Cardinal) -> Self {
+    pub fn new(negative_id: Node, positive_id: Node, side: Cardinal) -> Self {
         Self {
             negative_id,
             positive_id,
@@ -44,11 +42,11 @@ where
     }
 }
 
-impl<N> Index<Sign> for Line<N>
+impl<Node> Index<Sign> for Line<Node>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    type Output = N;
+    type Output = Node;
 
     fn index(&self, index: Sign) -> &Self::Output {
         match index {
@@ -58,9 +56,9 @@ where
     }
 }
 
-impl<N> IndexMut<Sign> for Line<N>
+impl<Node> IndexMut<Sign> for Line<Node>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
     fn index_mut(&mut self, index: Sign) -> &mut Self::Output {
         match index {
@@ -70,19 +68,21 @@ where
     }
 }
 
-impl<N> From<Caret<N>> for Line<N>
+impl<Node> From<Caret<Node>> for Line<Node>
 where
-    N: NodeKey,
+    Node: NodeKey,
 {
-    fn from(value: Caret<N>) -> Self {
+    fn from(value: Caret<Node>) -> Self {
         Self::new(value.id, value.id, value.side)
     }
 }
 
-pub trait LineLookup: ElementInformation1D + Deref<Target = Line> {
-    type CaretInfo: CaretLookup;
-    type AreaInfo: AreaInformation;
-    fn into_end(self, sign: Sign) -> Self::CaretInfo;
+query_impl! { From<Caret> for Line }
+
+pub trait LineQuery: ElementInformation1D + Deref<Target = Line> {
+    type CaretQuery: CaretQuery;
+    type AreaQuery: AreaQuery;
+    fn into_end(self, sign: Sign) -> Self::CaretQuery;
 
     /// checks and gaurantees that the ends of the line are arranged in normalised (Negative < Positive) order along the axis between them.
     /// note that this can result in them being converted into a line over a single caret if one subsumes the other
@@ -90,13 +90,10 @@ pub trait LineLookup: ElementInformation1D + Deref<Target = Line> {
     fn into_validated(self) -> Result<Self, Error<Self::Target>>;
     fn with_side(self, side: Cardinal) -> Self;
     fn with_nodes(self, negative_id: NodeId, positive_id: NodeId) -> Self;
-    fn into_scan_area(self) -> Self::AreaInfo;
-    /// this is the method you'd generally use when inserting tiles (unsure what strategy to employ for removals yet)
-    /// only works if starting from a tile, which is intended
-    fn into_transform_selection(self) -> SelectionArea;
+    fn into_scan_area(self) -> Self::AreaQuery;
 }
 
-pub trait LineInformationMut: ElementInformationMut + Deref<Target = Line> {
+pub trait LineNavigationMut: NavigationMut + Deref<Target = Line> {
     fn set_side(&mut self, side: Cardinal);
     fn set_nodes(&mut self, negative_id: NodeId, positive_id: NodeId);
 }
@@ -130,8 +127,6 @@ impl ElementInformation1D for Query<'_, Line> {
 }
 
 impl<'a> GroupInformation for Query<'a, Line> {
-    type NodeInformation = Query<'a, NodeId>;
-
     fn is_connected(&self) -> bool {
         self.into_end(Negative)
             .into_iter(Positive)
@@ -140,10 +135,10 @@ impl<'a> GroupInformation for Query<'a, Line> {
     }
 }
 
-impl<'a> LineLookup for Query<'a, Line> {
-    type CaretInfo = Query<'a, Caret>;
-    type AreaInfo = Query<'a, Area>;
-    fn into_end(self, sign: Sign) -> Self::CaretInfo {
+impl<'a> LineQuery for Query<'a, Line> {
+    type CaretQuery = Query<'a, Caret>;
+    type AreaQuery = Query<'a, Area>;
+    fn into_end(self, sign: Sign) -> Self::CaretQuery {
         self.context.query(Caret::new(self[sign], self.side))
     }
 
@@ -191,7 +186,7 @@ impl<'a> LineLookup for Query<'a, Line> {
     /// following gutters perpendicular to this line. i.e. the scan stops when those two gutters end.
     /// Scan areas are key building blocks in determining selections for graph edits.
     /// Before the scan is performed, the scan area is approximated by the absolute limits of the area (i.e. the far side of the containing surface).
-    fn into_scan_area(self) -> Self::AreaInfo {
+    fn into_scan_area(self) -> Self::AreaQuery {
         let surface_id = *Query::<NodeId>::from(self.into_end(Negative)).into_surface_of();
         let mut result = Area::new(surface_id, surface_id, surface_id, surface_id);
         match self.side {
@@ -227,62 +222,10 @@ impl<'a> LineLookup for Query<'a, Line> {
         self.context.query(result)
     }
 
-    /// this is the method you'd generally use when inserting tiles (unsure what strategy to employ for removals yet)
-    /// only works if starting from a tile, which is intended
-    /// todo: transform selection will be given it's own query type with the edit command as part of the arg, so it can resolve the correct shape fully.
-    fn into_transform_selection(mut self) -> SelectionArea {
-        self.into_validated()
-            .expect("Invalid selection starting line");
-        let inward = self
-            .with_side(self.side)
-            .into_scan_area()
-            .into_segmented(!self.side);
-
-        let maybe_outward_segments = {
-            let (cross_neg, cross_pos) = self.side.perpendicular_directions();
-            let initial_neg = self
-                .into_end(Negative)
-                .with_side(cross_neg)
-                .into_next(!self.side.sign);
-            let initial_pos = self
-                .into_end(Negative)
-                .with_side(cross_pos)
-                .into_next(!self.side.sign);
-            match (initial_neg, initial_pos) {
-                (Some(neg), Some(pos)) => {
-                    let reverse_line = self.context.query(Line::new(neg.id, pos.id, !self.side));
-                    if reverse_line.is_connected() {
-                        Some(reverse_line.into_scan_area().into_segmented(self.side))
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            }
-        };
-
-        // the rest of this is just normalising the above backward/forward parts to collapse intermediate Nones and arranged them in natural order
-        match maybe_outward_segments {
-            (None) => {
-                if self.side.sign == Positive {
-                    SelectionArea::Negative(inward)
-                } else {
-                    SelectionArea::Positive(inward)
-                }
-            }
-            Some(outward_fragment) => {
-                if self.side.sign == Positive {
-                    SelectionArea::Bidirectional(inward, outward_fragment)
-                } else {
-                    SelectionArea::Bidirectional(outward_fragment, inward)
-                }
-            }
-            _ => panic!(),
-        }
-    }
+    
 }
 
-impl ElementNavigation for Query<'_, Line> {
+impl Navigation for Query<'_, Line> {
     type Direction = Sign;
 
     fn peek(&self, direction: Self::Direction) -> Option<Line> {
@@ -354,8 +297,20 @@ impl ElementNavigation for Query<'_, Line> {
     }
 }
 
-impl<'a> From<Query<'a, Caret>> for Query<'a, Line> {
-    fn from(value: Query<'a, Caret>) -> Self {
-        value.context.query((*value).into())
+impl<T, Node> QuerySource<Line<Node>> for T
+where
+    T: RawQuerySource + QuerySource<Node, OutKey = NodeId>,
+    Node: NodeKey,
+{
+    type OutKey = Line<NodeId>;
+
+    fn try_query(&self, key: Line<Node>) -> anyhow::Result<Query<Self::OutKey>> {
+        Ok(self
+            .query(Line::new(
+                *self.try_query(key[Negative])?,
+                *self.try_query(key[Positive])?,
+                key.side,
+            ))
+            .into_validated()?)
     }
 }

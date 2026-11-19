@@ -1,8 +1,8 @@
-use crate::query::{ElementNavigation, Query};
+use crate::query::{Navigation, Query};
 use std::iter::{Chain, Once};
 use std::ops::Deref;
 
-pub trait ElementIteration: ElementNavigation {
+pub trait QueryIteration: Navigation {
     fn into_next(self, direction: Self::Direction) -> Option<Self>;
 
     fn into_iter(self, direction: Self::Direction) -> Iter<Self>
@@ -12,9 +12,9 @@ pub trait ElementIteration: ElementNavigation {
         Iter::new(self, direction)
     }
 }
-impl<'a, N> ElementIteration for Query<'a, N>
+impl<'a, Key> QueryIteration for Query<'a, Key>
 where
-    Query<'a, N>: ElementNavigation<Target = N>,
+    Query<'a, Key>: Navigation<Target = Key>,
 {
     fn into_next(mut self, direction: Self::Direction) -> Option<Self> {
         if let Some(next) = self.peek(direction) {
@@ -29,7 +29,7 @@ where
 #[derive(Copy, Clone, Debug)]
 pub struct Iter<T>
 where
-    T: ElementNavigation + Copy,
+    T: Navigation + Copy,
     T::Target: Sized,
 {
     current: T,
@@ -38,7 +38,7 @@ where
 
 impl<T> Iter<T>
 where
-    T: ElementIteration + Copy,
+    T: QueryIteration + Copy,
     <T as Deref>::Target: Sized,
 {
     pub fn new(item: T, direction: T::Direction) -> Self {
@@ -60,7 +60,7 @@ where
 
 impl<T> Iterator for Iter<T>
 where
-    T: ElementIteration + Copy,
+    T: QueryIteration + Copy,
     <T as Deref>::Target: Sized,
 {
     type Item = T;

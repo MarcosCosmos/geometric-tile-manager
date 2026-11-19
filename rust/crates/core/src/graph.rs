@@ -1,18 +1,21 @@
 use crate::error::Error;
 use crate::geometry::{AreaBounds, Axis::*, Cardinal, Sign::*};
-use crate::query::line::Line;
+use crate::query::Query;
+use crate::query::key::NodeKey;
+use crate::query::key::QueryKey;
+use crate::query::selection::TransformConstraints;
 use crate::query::source::{QuerySource, RawQuerySource};
-use crate::query::{NodeKey, Query, QueryKey};
 use anyhow::Result;
+use markers_derive::NodeKey;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::{Index, IndexMut};
 use uuid::Uuid;
-use crate::query::selection::TransformConstraints;
+use serde::{Deserialize, Serialize};
+use crate::query::line::Line;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, QueryKey, NodeKey)]
-#[query(Self)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, NodeKey)]
 pub struct NodeId(Uuid);
 
 impl NodeId {
@@ -166,9 +169,9 @@ impl Graph {
 }
 
 impl QuerySource<Uuid> for Graph {
-    type Index = NodeId;
+    type OutKey = NodeId;
 
-    fn try_query(&self, target: Uuid) -> Result<Query<Self::Index>> {
+    fn try_query(&self, target: Uuid) -> Result<Query<Self::OutKey>> {
         let id = NodeId(target);
         if self.bounds.contains_key(&id) {
             Ok(self.query(id))

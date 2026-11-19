@@ -1,29 +1,28 @@
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
-use crate::query::NodeKey;
-use crate::query::QueryKey;
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::ops::{Index, IndexMut, Not};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Axis {
     Horizontal,
     Vertical,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Sign {
     Negative,
     Positive,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct AxisBounds {
     negative: i32,
     positive: i32,
 }
 
-#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub enum BoundsOrdering {
     Before,
     PartiallyBefore,
@@ -127,7 +126,7 @@ impl IndexMut<Sign> for AxisBounds {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct AreaBounds {
     horizontal: AxisBounds,
     vertical: AxisBounds,
@@ -142,14 +141,14 @@ impl AreaBounds {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct LineBounds {
     pub side: Cardinal,
     pub axis_bounds: AxisBounds,
     pub side_location: i32,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 /// Usually associated with a side of a box
 pub struct Cardinal {
     pub axis: Axis,
@@ -257,7 +256,7 @@ pub const WEST: Cardinal = Cardinal {
     sign: Negative,
 };
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 /// Usually associated with a corner of a box
 pub struct Diagonal {
     horizontal: Sign,
@@ -310,10 +309,3 @@ pub const SOUTH_WEST: Diagonal = Diagonal {
     horizontal: Negative,
     vertical: Positive,
 };
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, QueryKey, NodeKey)]
-#[query(Self)]
-pub struct Point {
-    pub x: i32,
-    pub y: i32,
-}
