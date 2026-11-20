@@ -1,14 +1,15 @@
-use crate::error::Error;
-use crate::error::Error::NotASingleNode;
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{AreaBounds, Cardinal};
 use crate::graph::NodeId;
 use crate::query::area::{Area, AreaQuery};
 use crate::query::caret::{Caret, CaretQuery};
+use crate::query::key::{NodeKey, QueryKey};
 use crate::query::line::Line;
 use crate::query::source::RawQuerySource;
 use crate::query::{ElementInformation, ElementInformation2D, ElementKind, Query};
 use crate::query_impl;
+use snafu::{Snafu, ensure};
+use std::fmt::Debug;
 
 impl From<Caret> for NodeId {
     fn from(value: Caret) -> Self {
@@ -16,29 +17,28 @@ impl From<Caret> for NodeId {
     }
 }
 impl TryFrom<Line> for NodeId {
-    type Error = Error<Line>;
+    type Error = TooManyNodesError<Line>;
 
     fn try_from(value: Line) -> Result<Self, Self::Error> {
-        if value[Negative] == value[Positive] {
-            Ok(value[Negative])
-        } else {
-            Err(NotASingleNode(value))
-        }
+        ensure!(
+            value[Negative] == value[Positive],
+            TooManyNodesSnafu { key: value }
+        );
+        Ok(value[Negative])
     }
 }
 
 impl<'a> TryFrom<Area> for NodeId {
-    type Error = Error<Area>;
+    type Error = TooManyNodesError<Area>;
 
     fn try_from(value: Area) -> Result<Self, Self::Error> {
-        if value.north_west == value.north_east
-            && value.north_west == value.south_east
-            && value.north_west == value.south_west
-        {
-            Ok(value.north_west)
-        } else {
-            Err(Error::NotFullyConnected(value))
-        }
+        ensure!(
+            value.north_west == value.north_east
+                && value.north_west == value.south_east
+                && value.north_west == value.south_west,
+            TooManyNodesSnafu { key: value }
+        );
+        Ok(value.north_west)
     }
 }
 
@@ -84,4 +84,26 @@ impl<'a> NodeQuery for Query<'a, NodeId> {
                 .unwrap_or(self.key),
         )
     }
+}
+
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub(in super)))]
+#[snafu(display(
+    "Ambiguous attempt to convert a key that spans multiple nodes into a single node: {key:?}"
+))]
+pub struct TooManyNodesError<Key>
+where
+    Key: QueryKey,
+{
+    key: Key,
+}
+
+#[derive(Debug, Snafu)]
+#[snafu(visibility(pub))]
+#[snafu(display("No matching node could be found for key: {key:?}"))]
+pub struct NodeNotFound<Key>
+where
+    Key: NodeKey,
+{
+    key: Key,
 }

@@ -1,13 +1,14 @@
 pub mod area;
 pub mod caret;
+pub mod error;
 pub mod iter;
 pub mod key;
 pub mod line;
 pub mod neighbours;
 pub mod node;
+pub mod point;
 pub mod selection;
 pub mod source;
-pub mod point;
 
 use crate::geometry::{AreaBounds, LineBounds};
 use crate::graph::{Graph, NodeId};
@@ -28,8 +29,6 @@ pub trait GraphQuery: Deref<Target: QueryKey> + Sized {}
 pub trait ElementInformation: Deref<Target: QueryKey> + Sized {
     fn kind(&self) -> ElementKind;
 }
-
-
 
 pub trait ElementInformation1D: ElementInformation {
     fn bounds(&self) -> LineBounds;
@@ -58,7 +57,7 @@ pub trait NavigationMut: Navigation {
     fn set_target(&mut self, target: Self::Target);
 }
 
-/// A transparent wrapper struct that facilitates que functionally for types, like Caret or Line, that have que related functionality but shouldn't be stored with a persistent reference to the graph.
+/// A simple wrapper struct that facilitates que functionally for types, like Caret or Line, that have que related functionality but shouldn't be stored with a persistent reference to the graph.
 /// For each type where this is rational, the Navigation trait is implemented on the specialisation of Nav<'a, T>.
 #[derive(Copy, Clone, Debug)]
 pub struct Query<'a, Key>
@@ -68,7 +67,6 @@ where
     context: &'a Graph,
     key: Key,
 }
-
 
 impl<'a, Key> Query<'a, Key>
 where
@@ -92,6 +90,11 @@ where
 
 impl<'a, Key> GraphQuery for Query<'a, Key> where Key: QueryKey {}
 
-impl<'a, Key> GroupQuery for Query<'a, Key> where Self : GroupInformation, Key: QueryKey, Query<'a, NodeId>: From<Query<'a, Key>> {
+impl<'a, Key> GroupQuery for Query<'a, Key>
+where
+    Self: GroupInformation,
+    Key: QueryKey,
+    Query<'a, NodeId>: From<Query<'a, Key>>,
+{
     type NodeQuery = Query<'a, NodeId>;
 }

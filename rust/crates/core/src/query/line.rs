@@ -1,21 +1,22 @@
-use crate::error::Error;
-use crate::geometry::{
-    Axis::*, Cardinal, LineBounds, NORTH_EAST, NORTH_WEST, SOUTH_EAST, SOUTH_WEST, Sign, Sign::*,
-};
+use crate::geometry::{Cardinal, LineBounds, Sign, Sign::*};
 use crate::graph::NodeId;
 use crate::query::area::{Area, AreaQuery};
 use crate::query::caret::{Caret, CaretQuery};
+use crate::query::error::{QueryError, ValidationError, WrappedQueryError, WrappedQuerySnafu};
 use crate::query::iter::QueryIteration;
 use crate::query::key::{NodeKey, QueryKey};
-use crate::query::node::NodeQuery;
-use crate::query::selection::SelectionDetails;
+use crate::query::node::{NodeNotFound, NodeQuery};
 use crate::query::source::{QuerySource, RawQuerySource};
-use crate::query::{ElementInformation, ElementInformation1D, ElementKind, Navigation, GroupInformation, Query, NavigationMut};
+use crate::query::{
+    ElementInformation, ElementInformation1D, ElementKind, GroupInformation, Navigation,
+    NavigationMut, Query,
+};
 use crate::query_impl;
-use markers_derive::QueryKey;
+use markers_derive::{QueryKey, ValidationError};
+use serde::{Deserialize, Serialize};
+use snafu::{ResultExt, Snafu};
 use std::fmt::Debug;
 use std::ops::{Deref, Index, IndexMut};
-use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
 // As in, a line between two parallel Carets.
@@ -87,10 +88,9 @@ pub trait LineQuery: ElementInformation1D + Deref<Target = Line> {
     /// checks and gaurantees that the ends of the line are arranged in normalised (Negative < Positive) order along the axis between them.
     /// note that this can result in them being converted into a line over a single caret if one subsumes the other
     fn into_normalized(self) -> Self;
-    fn into_validated(self) -> Result<Self, Error<Self::Target>>;
+    fn into_validated(self) -> Result<Self, LineProblem>;
     fn with_side(self, side: Cardinal) -> Self;
     fn with_nodes(self, negative_id: NodeId, positive_id: NodeId) -> Self;
-    fn into_scan_area(self) -> Self::AreaQuery;
 }
 
 pub trait LineNavigationMut: NavigationMut + Deref<Target = Line> {
@@ -135,6 +135,15 @@ impl<'a> GroupInformation for Query<'a, Line> {
     }
 }
 
+// todo later: implement nested key swapping reverse engineer the input that corresponded to each error.
+#[derive(Debug, Snafu, ValidationError)]
+enum LineProblem {
+    /// A Line cannot span multiple surfaces
+    MultipleSurfaces,
+    /// The ends of the line are arranged in the wrong order
+    WrongOrder,
+}
+
 impl<'a> LineQuery for Query<'a, Line> {
     type CaretQuery = Query<'a, Caret>;
     type AreaQuery = Query<'a, Area>;
@@ -151,17 +160,19 @@ impl<'a> LineQuery for Query<'a, Line> {
         self
     }
 
-    fn into_validated(self) -> Result<Self, Error<Self::Target>> {
+    fn into_validated(self) -> Result<Self, LineProblem> {
         let neg = self.into_end(Negative);
         let pos = self.into_end(Positive);
         if Query::<NodeId>::from(neg).into_surface_of().deref()
             != Query::<NodeId>::from(pos).into_surface_of().deref()
         {
-            Err(Error::MultipleSurfaces(*self))
-        } else if neg.bounds().side_location != pos.bounds().side_location {
-            Err(Error::NotFullyConnected(*self))
+            Err(LineProblem::MultipleSurfaces)
+        } else if self.into_end(Negative).bounds().side_location
+            > self.into_end(Positive).bounds().side_location
+        {
+            Err(LineProblem::WrongOrder)
         } else {
-            Ok(self.into_normalized())
+            Ok(self)
         }
     }
 
@@ -181,48 +192,6 @@ impl<'a> LineQuery for Query<'a, Line> {
         self.key.positive_id = positive_id;
         self.into_normalized()
     }
-
-    /// A scan area is an area that represents the area that would be produced between this line and some far off line,
-    /// following gutters perpendicular to this line. i.e. the scan stops when those two gutters end.
-    /// Scan areas are key building blocks in determining selections for graph edits.
-    /// Before the scan is performed, the scan area is approximated by the absolute limits of the area (i.e. the far side of the containing surface).
-    fn into_scan_area(self) -> Self::AreaQuery {
-        let surface_id = *Query::<NodeId>::from(self.into_end(Negative)).into_surface_of();
-        let mut result = Area::new(surface_id, surface_id, surface_id, surface_id);
-        match self.side {
-            Cardinal {
-                axis: Horizontal,
-                sign: Negative,
-            } => {
-                result[NORTH_WEST] = self[Negative];
-                result[SOUTH_WEST] = self[Positive];
-            }
-            Cardinal {
-                axis: Horizontal,
-                sign: Positive,
-            } => {
-                result[NORTH_EAST] = self[Negative];
-                result[SOUTH_EAST] = self[Positive];
-            }
-            Cardinal {
-                axis: Vertical,
-                sign: Negative,
-            } => {
-                result[NORTH_WEST] = self[Negative];
-                result[NORTH_EAST] = self[Positive];
-            }
-            Cardinal {
-                axis: Vertical,
-                sign: Positive,
-            } => {
-                result[SOUTH_WEST] = self[Negative];
-                result[SOUTH_EAST] = self[Positive];
-            }
-        }
-        self.context.query(result)
-    }
-
-    
 }
 
 impl Navigation for Query<'_, Line> {
@@ -299,18 +268,24 @@ impl Navigation for Query<'_, Line> {
 
 impl<T, Node> QuerySource<Line<Node>> for T
 where
-    T: RawQuerySource + QuerySource<Node, OutKey = NodeId>,
-    Node: NodeKey,
+    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = NodeNotFound<Node>>,
+    Node: NodeKey + 'static,
 {
     type OutKey = Line<NodeId>;
 
-    fn try_query(&self, key: Line<Node>) -> anyhow::Result<Query<Self::OutKey>> {
-        Ok(self
-            .query(Line::new(
-                *self.try_query(key[Negative])?,
-                *self.try_query(key[Positive])?,
-                key.side,
-            ))
-            .into_validated()?)
+    type Error = WrappedQueryError<Line<Node>, QueryError<Line<Node>, LineProblem>>;
+
+    fn try_query(&self, key: Line<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
+        (|| {
+            Ok(self
+                .query(Line::new(
+                    *self.try_query(key[Negative])?,
+                    *self.try_query(key[Positive])?,
+                    key.side,
+                ))
+                .into_normalized()
+                .into_validated()?)
+        })()
+        .with_context(|_| WrappedQuerySnafu { key })
     }
 }

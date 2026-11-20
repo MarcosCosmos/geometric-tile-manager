@@ -7,11 +7,9 @@ use crate::query::area::{Area, AreaQuery};
 use crate::query::caret::{Caret, CaretIterExt, CaretQuery};
 use crate::query::iter::QueryIteration;
 use crate::query::line::{Line, LineQuery};
-use crate::query::source::RawQuerySource;
-use crate::query::{
-    ElementInformation, ElementInformation2D, ElementKind, GroupInformation,
-};
 use crate::query::selection::SegmentedArea;
+use crate::query::source::RawQuerySource;
+use crate::query::{ElementInformation, ElementInformation2D, ElementKind, GroupInformation};
 
 /// low-level resizing is always done with one side fixed in place (only the non-anchored side actually moves)
 fn transform_node(

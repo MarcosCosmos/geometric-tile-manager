@@ -4,19 +4,20 @@ use crate::query::caret::Caret;
 use crate::query::key::{NodeKey, QueryKey};
 use crate::query::line::Line;
 use markers_derive::{Command, SelectionCommand};
-use std::fmt::Debug;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 
-
-pub trait Command: Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned {
-}
+pub trait Command: Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned {}
 
 pub trait SelectionCommand: Command {
-    type Key: QueryKey;
+    type Key: QueryKey + Into<Line<<Self::Key as QueryKey>::NodeKey>>;
+    fn key(self) -> Self::Key;
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+// todo: optionally allow selection commands to include an area to constraint the op to. Defaults to the surface if not specified, and the main complexity of adding it would be having to validate it's query.
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Command)]
 pub struct RunQuery<Key>
 where
     Key: QueryKey,
@@ -71,7 +72,7 @@ where
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, SelectionCommand)]
 pub struct DeleteNode<Key = Caret>
 where
-    Key: QueryKey + Into<Caret<Key::NodeKey>>,
+    Key: QueryKey + Into<Caret<Key::NodeKey>> + Into<Line<Key::NodeKey>>,
 {
     pub key: Key,
 }

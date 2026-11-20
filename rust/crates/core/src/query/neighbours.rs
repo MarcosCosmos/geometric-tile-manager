@@ -2,14 +2,14 @@ use crate::geometry::Cardinal;
 use crate::graph::{Graph, NodeId};
 use crate::query::caret::Caret;
 use crate::query::key::NodeKey;
-use crate::query::node::NodeQuery;
+use crate::query::node::{NodeNotFound, NodeQuery};
 use crate::query::source::{QuerySource, RawQuerySource};
 use crate::query::{ElementInformation, ElementKind, Query, QueryKey};
 use crate::query_impl;
 use markers_derive::QueryKey;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::ops::Deref;
-use serde::{Deserialize, Serialize};
 
 pub trait NeighbourhoodInformation<'a, T>
 where
@@ -216,12 +216,13 @@ where
 
 impl<T, Node> QuerySource<NeighbourTiles<Node>> for T
 where
-    T: RawQuerySource + QuerySource<Node, OutKey = NodeId>,
-    Node: NodeKey,
+    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = NodeNotFound<Node>>,
+    Node: NodeKey + 'static,
 {
     type OutKey = NeighbourTiles;
+    type Error = NodeNotFound<Node>;
 
-    fn try_query(&self, key: NeighbourTiles<Node>) -> anyhow::Result<Query<Self::OutKey>> {
+    fn try_query(&self, key: NeighbourTiles<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
         Ok(self.query(NeighbourTiles(Caret::new(
             *self.try_query(key.id)?,
             key.side,
@@ -231,12 +232,13 @@ where
 
 impl<T, Node> QuerySource<NeighbourSurfaces<Node>> for T
 where
-    T: RawQuerySource + QuerySource<Node, OutKey = NodeId>,
-    Node: NodeKey,
+    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = NodeNotFound<Node>>,
+    Node: NodeKey + 'static,
 {
     type OutKey = NeighbourSurfaces;
+    type Error = NodeNotFound<Node>;
 
-    fn try_query(&self, key: NeighbourSurfaces<Node>) -> anyhow::Result<Query<Self::OutKey>> {
+    fn try_query(&self, key: NeighbourSurfaces<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
         Ok(self.query(NeighbourSurfaces(Caret::new(
             *self.try_query(key.id)?,
             key.side,

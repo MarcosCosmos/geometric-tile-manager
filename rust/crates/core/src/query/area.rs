@@ -1,4 +1,3 @@
-use crate::error::Error;
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{
@@ -7,10 +6,11 @@ use crate::geometry::{
 };
 use crate::graph::NodeId;
 use crate::query::caret::Caret;
+use crate::query::error::{QueryError, ValidationError, WrappedQueryError, WrappedQuerySnafu};
 use crate::query::iter::QueryIteration;
 use crate::query::key::NodeKey;
 use crate::query::line::{Line, LineQuery};
-use crate::query::node::NodeQuery;
+use crate::query::node::{NodeNotFound, NodeQuery};
 use crate::query::selection::SegmentedArea;
 use crate::query::source::{QuerySource, RawQuerySource};
 use crate::query::{
@@ -18,12 +18,13 @@ use crate::query::{
     Query, QueryKey,
 };
 use crate::query_impl;
-use markers_derive::QueryKey;
+use markers_derive::{QueryKey, ValidationError};
+use serde::{Deserialize, Serialize};
+use snafu::{ResultExt, Snafu};
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::ops::{Index, IndexMut};
-use serde::{Deserialize, Serialize};
 
 /// Generally dividers will be clean lines that don't intersect any tiles,
 /// but the start or end may or may not result in cutting through some tiles
@@ -134,10 +135,14 @@ pub trait AreaQuery: ElementInformation2D {
         SegmentedArea::new(self.into_segments(start_side).collect(), start_side.axis)
     }
 
-    fn into_validated(self) -> Result<Self, Error<Self::Target>>
+    fn into_validated(self) -> Result<Self, AreaProblem>
     where
         Self::Target: Debug;
     fn into_segments(self, start_side: Cardinal) -> impl Iterator<Item = Area>;
+    /// Constrain an area by updating one of its sides with a line.
+    /// Useful for constraining selection areas e.g. delete selections cannot include the deleted tile, and generally need to start from a given line.
+    /// Note: the resulting area may become invalid. If not pre-asserted, check with into_validated!
+    fn with_constraint(self, constraint: Line) -> Self;
 }
 
 impl ElementInformation for Query<'_, Area> {
@@ -183,13 +188,20 @@ impl ElementInformation2D for Query<'_, Area> {
 }
 
 impl<'a> GroupInformation for Query<'a, Area> {
-
     fn is_connected(&self) -> bool {
         self.into_side(NORTH).is_connected()
             && self.into_side(EAST).is_connected()
             && self.into_side(SOUTH).is_connected()
             && self.into_side(WEST).is_connected()
     }
+}
+
+#[derive(Debug, Snafu, ValidationError)]
+pub enum AreaProblem {
+    #[snafu(display("An Area cannot span multiple surfaces"))]
+    MultipleSurfaces,
+    #[snafu(display("The following sides were in the wrong order: {bad_sides:?}"))]
+    WrongOrder { bad_sides: Vec<Cardinal> },
 }
 
 impl<'a> AreaQuery for Query<'a, Area> {
@@ -222,18 +234,63 @@ impl<'a> AreaQuery for Query<'a, Area> {
         self.context.query(self[corner])
     }
 
-    fn into_validated(self) -> Result<Self, Error<Self::Target>> {
+    fn into_validated(self) -> Result<Self, AreaProblem> {
         if [NORTH_WEST, NORTH_EAST, SOUTH_EAST, SOUTH_WEST]
             .map(|diagonal| *self.into_corner(diagonal).into_surface_of())
             .iter()
             .collect::<HashSet<_>>()
             .len()
-            == 1
+            != 1
         {
-            Ok(self)
+            Err(AreaProblem::MultipleSurfaces)
         } else {
-            Err(Error::MultipleSurfaces(*self))
+            let bad_sides: Vec<Cardinal> = [WEST, NORTH, EAST, SOUTH]
+                .into_iter()
+                .filter(|&side| self.into_side(side).into_validated().is_err())
+                .collect();
+            if bad_sides.len() > 0 {
+                Err(AreaProblem::WrongOrder { bad_sides })
+            } else {
+                Ok(self)
+            }
         }
+    }
+
+    /// Constrain an area by updating one of its sides with a line.
+    /// Useful for constraining selection areas e.g. delete selections cannot include the deleted tile, and generally need to start from a given line.
+    /// Note: the resulting area may become invalid. If not pre-asserted, check with into_validated!
+    fn with_constraint(mut self, constraint: Line) -> Self {
+        match constraint.side {
+            Cardinal {
+                axis: Horizontal,
+                sign: Negative,
+            } => {
+                self.key[NORTH_WEST] = constraint[Negative];
+                self.key[SOUTH_WEST] = constraint[Positive];
+            }
+            Cardinal {
+                axis: Horizontal,
+                sign: Positive,
+            } => {
+                self.key[NORTH_EAST] = constraint[Negative];
+                self.key[SOUTH_EAST] = constraint[Positive];
+            }
+            Cardinal {
+                axis: Vertical,
+                sign: Negative,
+            } => {
+                self.key[NORTH_WEST] = constraint[Negative];
+                self.key[NORTH_EAST] = constraint[Positive];
+            }
+            Cardinal {
+                axis: Vertical,
+                sign: Positive,
+            } => {
+                self.key[SOUTH_WEST] = constraint[Negative];
+                self.key[SOUTH_EAST] = constraint[Positive];
+            }
+        }
+        self
     }
 
     fn into_segments(self, start_side: Cardinal) -> impl Iterator<Item = Self::Target> {
@@ -306,108 +363,28 @@ impl<'a> AreaQuery for Query<'a, Area> {
             }
         })
     }
-
-    // fn into_normalized(mut self) -> Self {
-    //     let corners = [
-    //         self.context.que(self.north_west),
-    //         self.context.que(self.north_east),
-    //         self.context.que(self.south_east),
-    //         self.context.que(self.south_west),
-    //     ];
-    //
-    //     let outer_bounds = corners
-    //         .iter()
-    //         .map(|node| node.bounds())
-    //         .reduce(|mut acc, each| {
-    //             acc[Horizontal] = acc[Horizontal].span(&each[Horizontal]);
-    //             acc[Vertical] = acc[Vertical].span(&each[Vertical]);
-    //             acc
-    //         })
-    //         .unwrap();
-    //
-    //     let west_raw: Vec<_> = corners
-    //         .iter()
-    //         .filter(|node| node.bounds()[WEST] == outer_bounds[WEST])
-    //         .map(|node| *node.deref())
-    //         .collect();
-    //     let north_raw: Vec<_> = corners
-    //         .iter()
-    //         .filter(|node| node.bounds()[NORTH] == outer_bounds[NORTH])
-    //         .map(|node| *node.deref())
-    //         .collect();
-    //     let east_raw: Vec<_> = corners
-    //         .iter()
-    //         .filter(|node| node.bounds()[EAST] == outer_bounds[EAST])
-    //         .map(|node| *node.deref())
-    //         .collect();
-    //     let south_raw: Vec<_> = corners
-    //         .iter()
-    //         .filter(|node| node.bounds()[SOUTH] == outer_bounds[SOUTH])
-    //         .map(|node| *node.deref())
-    //         .collect();
-    //
-    //     let west: HashSet<_> = west_raw.iter().copied().collect();
-    //     let north: HashSet<_> = north_raw.iter().copied().collect();
-    //     let east: HashSet<_> = east_raw.iter().copied().collect();
-    //     let south: HashSet<_> = south_raw.iter().copied().collect();
-    //
-    //     let mut north_west = &north & &west;
-    //     let mut north_east = &north & &east;
-    //     let mut south_east = &south & &east;
-    //     let mut south_west = &south & &west;
-    //
-    //     let north_west_essential = &north_west & &(&north_east | &south_west);
-    //     let north_east_essential = &north_east & &(&north_west | &south_east);
-    //     let south_east_essential = &south_east & &(&north_east | &south_west);
-    //     let south_west_essential = &south_east & &(&north_west | &south_east);
-    //
-    //     north_west = if north_west_essential.len() > 0 {
-    //         north_west_essential
-    //     } else {
-    //         north_west
-    //     };
-    //     north_east = if north_east_essential.len() > 0 {
-    //         north_east_essential
-    //     } else {
-    //         north_east
-    //     };
-    //     south_east = if south_east_essential.len() > 0 {
-    //         south_east_essential
-    //     } else {
-    //         south_east
-    //     };
-    //     south_west = if south_west_essential.len() > 0 {
-    //         south_west_essential
-    //     } else {
-    //         south_west
-    //     };
-    //
-    //     let corners =
-    //
-    //     self.target.north_west = north_west.into_iter().next().unwrap();
-    //     self.target.north_east = north_east.into_iter().next().unwrap();
-    //     self.target.south_east = south_east.into_iter().next().unwrap();
-    //     self.target.south_west = south_west.into_iter().next().unwrap();
-    //
-    //     self
-    // }
 }
 
 impl<T, Node> QuerySource<Area<Node>> for T
 where
-    T: RawQuerySource + QuerySource<Node, OutKey = NodeId>,
-    Node: NodeKey,
+    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = NodeNotFound<Node>>,
+    Node: NodeKey + 'static,
 {
     type OutKey = Area;
 
-    fn try_query(&self, key: Area<Node>) -> anyhow::Result<Query<Self::OutKey>> {
-        Ok(self
-            .query(Area {
-                north_west: *self.try_query(key.north_west)?,
-                north_east: *self.try_query(key.north_east)?,
-                south_east: *self.try_query(key.south_east)?,
-                south_west: *self.try_query(key.south_west)?,
-            })
-            .into_validated()?)
+    type Error = WrappedQueryError<Area<Node>, QueryError<Line<Node>, AreaProblem>>;
+
+    fn try_query(&self, key: Area<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
+        (|| {
+            Ok(self
+                .query(Area {
+                    north_west: *self.try_query(key.north_west)?,
+                    north_east: *self.try_query(key.north_east)?,
+                    south_east: *self.try_query(key.south_east)?,
+                    south_west: *self.try_query(key.south_west)?,
+                })
+                .into_validated()?)
+        })()
+        .with_context(|_| WrappedQuerySnafu { key })
     }
 }

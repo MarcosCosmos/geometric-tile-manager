@@ -1,15 +1,15 @@
-use crate::query::{ElementInformation, ElementKind, Query, QueryKey};
-use crate::query::key::NodeKey;
-use serde::{Deserialize, Serialize};
-use markers_derive::NodeKey;
-use crate::error::Error;
 use crate::geometry::Axis::{Horizontal, Vertical};
-use crate::geometry::{EAST, NORTH, SOUTH, WEST};
 use crate::geometry::Sign::{Negative, Positive};
+use crate::geometry::{EAST, NORTH, SOUTH, WEST};
 use crate::graph::{Graph, NodeId};
+use crate::query::key::NodeKey;
 use crate::query::neighbours::{NeighbourTiles, NeighbourhoodInformation};
-use crate::query::node::NodeQuery;
+use crate::query::node::{NodeNotFound, NodeNotFoundSnafu, NodeQuery};
 use crate::query::source::{QuerySource, RawQuerySource};
+use crate::query::{ElementInformation, ElementKind, Query, QueryKey};
+use markers_derive::NodeKey;
+use serde::{Deserialize, Serialize};
+use snafu::OptionExt;
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, NodeKey)]
 pub struct Point {
@@ -19,8 +19,9 @@ pub struct Point {
 
 impl QuerySource<Point> for Graph {
     type OutKey = NodeId;
+    type Error = NodeNotFound<Point>;
 
-    fn try_query(&self, key: Point) -> anyhow::Result<Query<Self::OutKey>> {
+    fn try_query(&self, key: Point) -> Result<Query<Self::OutKey>, Self::Error> {
         self.bounds
             .iter()
             .filter(|&(_, &bounds)| {
@@ -33,13 +34,13 @@ impl QuerySource<Point> for Graph {
             .filter(|node| {
                 node.kind() == ElementKind::Tile
                     || [NORTH, SOUTH, EAST, WEST].into_iter().all(|side| {
-                    Query::<NeighbourTiles>::from(node.into_side(side))
-                        .items()
-                        .len()
-                        == 0
-                })
+                        Query::<NeighbourTiles>::from(node.into_side(side))
+                            .items()
+                            .len()
+                            == 0
+                    })
             })
             .next()
-            .ok_or(Error::NodeNotFound(key).into())
+            .with_context(|| NodeNotFoundSnafu { key })
     }
 }

@@ -1,5 +1,6 @@
-use serde::de::DeserializeOwned;
+use crate::graph::NodeId;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::fmt::Debug;
 use std::hash::Hash;
 use uuid::Uuid;
@@ -8,13 +9,13 @@ pub trait QueryKey: Sized + Copy + Clone + Debug + Eq + Serialize + DeserializeO
     type NodeKey: NodeKey;
 }
 
+impl NodeKey for Uuid {}
+
 impl QueryKey for Uuid {
     type NodeKey = Self;
 }
 
-impl NodeKey for Uuid {}
-
-pub trait NodeKey: QueryKey + Hash {}
+pub trait NodeKey: QueryKey {}
 
 #[macro_export]
 macro_rules! query_impl {
@@ -38,7 +39,7 @@ macro_rules! query_impl {
     ($(<$($generics:ident),*>)? TryFrom<$source:ty> for $dest:ident$(<$($dest_generics:ident),+>)? $(where $($clause:tt)+)?) => {
         impl<'a$($(,$generics)*)?> TryFrom<Query<'a, $source>> for Query<'a, $dest> $(where $($clause)+)?
         {
-            type Error = Error<$source>;
+            type Error = <$dest as TryFrom<$source>>::Error;
             fn try_from(value: Query<'a, $source>) -> Result<Self, Self::Error> {
                 $dest$(::<$($dest_generics),+>)?::try_from(*value).map(|dest| value.context.query(dest))
             }

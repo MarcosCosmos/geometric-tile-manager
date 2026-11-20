@@ -1,20 +1,33 @@
-use serde::{Deserialize, Serialize};
 use crate::command::{AddTile, DeleteNode, MoveLine, SelectionCommand};
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{Axis, Sign};
-use crate::query::{Query, QueryKey};
+use crate::graph::{Graph, NodeId};
 use crate::query::area::Area;
+use crate::query::caret::Caret;
+use crate::query::error::{WrappedQueryError, WrappedQuerySnafu};
+use crate::query::key::NodeKey;
 use crate::query::line::{Line, LineQuery};
+use crate::query::neighbours::NeighbourSurfaces;
+use crate::query::node::NodeNotFound;
+use crate::query::source::{QuerySource, RawQuerySource};
+use crate::query::{Query, QueryKey};
 use markers_derive::QueryKey;
-use crate::graph::Graph;
-use crate::query::source::RawQuerySource;
+use serde::{Deserialize, Serialize};
+use snafu::{ResultExt, Snafu};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
-#[node(<C::Key as QueryKey>::NodeKey)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Selection<C>(pub C)
 where
-    C: SelectionCommand<Key: QueryKey> + Into<Line<<C::Key as QueryKey>::NodeKey>>;
+    C: SelectionCommand;
+
+impl<C> QueryKey for Selection<C>
+where
+    C: SelectionCommand,
+    <C as SelectionCommand>::CanonicalForm: SelectionCommand,
+{
+    type NodeKey = <C::Key as QueryKey>::NodeKey;
+}
 
 impl<C> Into<Line<<C::Key as QueryKey>::NodeKey>> for Selection<C>
 where
@@ -129,16 +142,29 @@ pub trait SelectionInformation {
     fn details(&self) -> SelectionDetails;
 }
 
-impl <'a> SelectionInformation for Query<'a, Selection<AddTile>> {
-
+#[derive(Debug, Snafu)]
+pub enum SelectionProblem {
+}
+pub trait SelectionQuery {
+    fn into_validated(self) ->
 }
 
-impl <'a> SelectionInformation for Query<'a, Selection<DeleteNode>> {
-
+impl<'a> SelectionInformation for Query<'a, Selection<AddTile>> {
+    fn details(&self) -> SelectionDetails {
+        todo!()
+    }
 }
 
-impl <'a> SelectionInformation for Query<'a, Selection<MoveLine>> {
+impl<'a> SelectionInformation for Query<'a, Selection<DeleteNode>> {
+    fn details(&self) -> SelectionDetails {
+        todo!()
+    }
+}
 
+impl<'a> SelectionInformation for Query<'a, Selection<MoveLine>> {
+    fn details(&self) -> SelectionDetails {
+        todo!()
+    }
 }
 
 /// this is the method you'd generally use when inserting tiles (unsure what strategy to employ for removals yet)
@@ -239,5 +265,66 @@ fn finalize_gutter(graph: &Graph, gutter: &mut Line, constraints: TransformConst
                 gutter[Positive] = c.id;
             }
         }
+    }
+}
+
+impl<Key, T> QuerySource<Selection<AddTile<Key>>> for T
+where
+    Key: QueryKey + Into<Line<<Key as QueryKey>::NodeKey>>,
+    T: RawQuerySource + QuerySource<Key, OutKey: Into<Line>, Error: 'static>,
+    AddTile<Key>: SelectionCommand<Key = Key>,
+{
+    type OutKey = Selection<AddTile>;
+    type Error = WrappedQueryError<Selection<AddTile<Key>>, T::Error>;
+
+    fn try_query(&self, key: Selection<AddTile<Key>>) -> Result<Query<Self::OutKey>, Self::Error> {
+        Ok(self.query(Selection(AddTile {
+            key: (*self
+                .try_query(key.0.key())
+                .with_context(|_| WrappedQuerySnafu { key })?)
+            .into(),
+        })))
+    }
+}
+
+impl<Key, T> QuerySource<Selection<DeleteNode<Key>>> for T
+where
+    Key: QueryKey + Into<Caret<Key::NodeKey>> + Into<Line<Key::NodeKey>>,
+    T: RawQuerySource + QuerySource<Key, OutKey: Into<Caret> + Into<Line>, Error: 'static>,
+    DeleteNode<Key>: SelectionCommand<Key = Key>,
+{
+    type OutKey = Selection<DeleteNode>;
+    type Error = WrappedQueryError<Selection<DeleteNode<Key>>, T::Error>;
+
+    fn try_query(
+        &self,
+        key: Selection<DeleteNode<Key>>,
+    ) -> Result<Query<Self::OutKey>, Self::Error> {
+        Ok(self.query(Selection(DeleteNode {
+            key: (*self
+                .try_query(key.0.key())
+                .with_context(|_| WrappedQuerySnafu { key })?)
+            .into(),
+        })))
+    }
+}
+
+impl<Key, T> QuerySource<Selection<MoveLine<Key>>> for T
+where
+    Key: QueryKey + Into<Line<Key::NodeKey>>,
+    T: RawQuerySource + QuerySource<Key, OutKey: Into<Line>, Error: 'static>,
+    MoveLine<Key>: SelectionCommand<Key = Key>,
+{
+    type OutKey = Selection<MoveLine>;
+    type Error = WrappedQueryError<Selection<MoveLine<Key>>, T::Error>;
+
+    fn try_query(&self, key: Selection<MoveLine<Key>>) -> Result<Query<Self::OutKey>, Self::Error> {
+        Ok(self.query(Selection(MoveLine::new(
+            (*self
+                .try_query(key.0.key())
+                .with_context(|_| WrappedQuerySnafu { key })?)
+            .into(),
+            key.0.new_location,
+        ))))
     }
 }

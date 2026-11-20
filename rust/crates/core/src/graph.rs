@@ -1,19 +1,21 @@
-use crate::error::Error;
 use crate::geometry::{AreaBounds, Axis::*, Cardinal, Sign::*};
 use crate::query::Query;
+use crate::query::error::{Error, KeyedQuerySnafu};
 use crate::query::key::NodeKey;
 use crate::query::key::QueryKey;
+use crate::query::line::Line;
+use crate::query::node::{NodeNotFound, NodeNotFoundSnafu};
 use crate::query::selection::TransformConstraints;
-use crate::query::source::{QuerySource, RawQuerySource};
+use crate::query::source::{QueryFailure, QuerySource, RawQuerySource};
 use anyhow::Result;
-use markers_derive::NodeKey;
+use markers_derive::{NodeKey, QueryKey};
+use serde::{Deserialize, Serialize};
+use snafu::ensure;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::{Index, IndexMut};
 use uuid::Uuid;
-use serde::{Deserialize, Serialize};
-use crate::query::line::Line;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, NodeKey)]
 pub struct NodeId(Uuid);
@@ -43,7 +45,7 @@ struct NeighbourhoodGroup {
 /// - Gaps may be present either on the inside of a surface or between tiles; in htis sense gaps would potentially alter poorly written algorithms
 /// - Storing tiles seperately from neighboy
 #[derive(Clone, Debug, Default)]
-pub struct Graph {
+pub(super) struct Graph {
     pub(super) bounds: HashMap<NodeId, AreaBounds>,
 
     pub(super) containing_surface: HashMap<NodeId, NodeId>,
@@ -170,13 +172,11 @@ impl Graph {
 
 impl QuerySource<Uuid> for Graph {
     type OutKey = NodeId;
+    type Error = NodeNotFound<Uuid>;
 
-    fn try_query(&self, target: Uuid) -> Result<Query<Self::OutKey>> {
-        let id = NodeId(target);
-        if self.bounds.contains_key(&id) {
-            Ok(self.query(id))
-        } else {
-            Err(Error::NodeNotFound(target).into())
-        }
+    fn try_query(&self, key: Uuid) -> Result<Query<Self::OutKey>, Self::Error> {
+        let id = NodeId(key);
+        ensure!(self.bounds.contains_key(&id), NodeNotFoundSnafu { key });
+        Ok(self.query(id))
     }
 }

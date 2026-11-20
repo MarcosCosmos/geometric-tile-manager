@@ -6,10 +6,7 @@ use crate::query::neighbours::{
     NeighbourSurfaces, NeighbourTiles, NeighbourhoodInformation, Neighbours,
 };
 use crate::query::source::{QuerySource, RawQuerySource};
-use crate::query::{
-    ElementInformation, ElementKind,
-    Navigation, NavigationMut, Query,
-};
+use crate::query::{ElementInformation, ElementKind, Navigation, NavigationMut, Query};
 use std::ops::Deref;
 use uuid::Uuid;
 
