@@ -1,12 +1,11 @@
-use crate::geometry::Sign::{Negative, Positive};
-use crate::geometry::{Axis, Cardinal, Sign};
-use crate::graph::{Graph, NodeId};
-use crate::query::caret::{Caret, CaretNavigationMut};
-use crate::query::neighbours::{
-    NeighbourSurfaces, NeighbourTiles, NeighbourhoodInformation, Neighbours,
+use geowm::caret::{Caret, CaretNavigationMut};
+use geowm::geometry::{Axis, Cardinal, Sign};
+use geowm::graph::{Graph, NodeId};
+use geowm::neighbours::{NeighbourSurfaces, NeighbourTiles, NeighbourhoodInformation, Neighbours};
+use geowm::query::{
+    ElementInformation, ElementInformation1D, ElementKind, Navigation, NavigationMut, Query,
 };
-use crate::query::source::{QuerySource, RawQuerySource};
-use crate::query::{ElementInformation, ElementKind, Navigation, NavigationMut, Query};
+use geowm::source::{QuerySource, RawQuerySource};
 use std::ops::Deref;
 use uuid::Uuid;
 
@@ -83,17 +82,21 @@ impl<'a, 'b> FocusNavigator<'a, 'b> {
         }
     }
 
-    fn nearest_by_centers(&self, candidates: &[NodeId], axis: Axis) -> Option<NodeId> {
-        let center = self.graph.bounds[&self.id][axis].center();
-        candidates
-            .iter()
-            .min_by(|a, b| {
-                f32::total_cmp(
-                    &f32::abs(self.graph.bounds[a][axis].center() - center),
-                    &f32::abs(self.graph.bounds[b][axis].center() - center),
-                )
-            })
-            .copied()
+    fn nearest_by_centers<T>(&self, candidates: T, axis: Axis) -> Option<NodeId>
+    where
+        T: Iterator<Item = Query<Caret>>,
+    {
+        let center = self.graph.query(**self).bounds().axis_bounds.center();
+        Some(
+            candidates
+                .min_by(|a, b| {
+                    f32::total_cmp(
+                        &f32::abs(a.bounds().axis_bounds.center() - center),
+                        &f32::abs(b.bounds().axis_bounds.center() - center),
+                    )
+                })?
+                .id,
+        )
     }
 }
 
@@ -108,27 +111,26 @@ impl Deref for FocusNavigator<'_, '_> {
 impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
     type Direction = Cardinal;
     fn peek(&self, direction: Cardinal) -> Option<Caret> {
-        let current = **self;
+        let current = self.graph.query(**self);
         let candidates = {
-            let current_node = Query::<NodeId>::from(self.graph.query(current.id));
-            let mut prelims: Query<Neighbours> = match current_node.kind() {
-                ElementKind::Surface => self.graph.query(NeighbourSurfaces(current).into()),
+            let mut prelims: Query<Neighbours> = match current.kind() {
+                ElementKind::Surface => Query::<NeighbourSurfaces>::from(current).into(),
                 ElementKind::Tile => {
-                    let immediate = self.graph.query(NeighbourTiles(current));
+                    let immediate = Query::<NeighbourTiles>::from(current);
                     let items = immediate.items();
                     if items.len() == 1 && self.graph.query(items[0]).kind() == ElementKind::Surface
                     {
-                        self.graph.query(NeighbourSurfaces(current).into())
+                        Query::<NeighbourSurfaces>::from(current).into()
                     } else {
                         immediate.into()
                     }
                 }
                 _ => panic!(),
             };
-            let targets = match *prelims {
+            match *prelims {
                 Neighbours::Surfaces(_)
                     if let Some(next_surface_id) =
-                        self.nearest_by_centers(prelims.items(), direction.axis) =>
+                        self.nearest_by_centers(prelims.into_iter(), direction.axis) =>
                 {
                     let distant = self
                         .graph
@@ -144,8 +146,7 @@ impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
                     }
                 }
                 _ => prelims,
-            };
-            targets.items()
+            }
         };
 
         if self.state.history_axis == direction.axis
@@ -159,7 +160,9 @@ impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
             && let Some(caret) = self.graph.query(*self.deref()).peek(direction.sign)
         {
             Some(caret)
-        } else if let Some(neighbour) = self.nearest_by_centers(candidates, direction.axis) {
+        } else if let Some(neighbour) =
+            self.nearest_by_centers(candidates.into_iter(), direction.axis)
+        {
             Some(Caret::new(neighbour, !direction))
         } else {
             None
@@ -185,24 +188,21 @@ impl NavigationMut for FocusNavigator<'_, '_> {
         /// we'll have to decide whether or not to deliberately clean it after operations but for now it is relatively safer to do a check
         /// also this draft doesn't currently account for content swapping, which would probably be supported by mapping layer instead of managing more complex graph manipulations
         /// for that we will probably need id type parameterisation for carets, e.g. with a newtype for outer ids, and have outer ids be what is stored in the nav state.
-        if let Some(destination) = self.peek(direction) {
-            if direction.axis == self.state.history_axis {
-                let past = self.history_mut(direction.sign);
-                if past.pop_if(|top| top.id == destination.id).is_none() {
-                    past.clear();
-                }
-            } else {
-                self.state.negative_history.clear();
-                self.state.positive_history.clear();
-                self.state.history_axis = direction.axis;
-                let current = self.state.target?;
-                self.history_mut(!direction.sign).push(current);
+        let destination = self.peek(direction)?;
+        if direction.axis == self.state.history_axis {
+            let past = self.history_mut(direction.sign);
+            if past.pop_if(|top| top.id == destination.id).is_none() {
+                past.clear();
             }
-            self.state.target = Some(destination);
-            Some(self)
         } else {
-            None
+            self.state.negative_history.clear();
+            self.state.positive_history.clear();
+            self.state.history_axis = direction.axis;
+            let current = self.state.target?;
+            self.history_mut(!direction.sign).push(current);
         }
+        self.state.target = Some(destination);
+        Some(self)
     }
 
     /// This allows arbitrary updates to the focus.

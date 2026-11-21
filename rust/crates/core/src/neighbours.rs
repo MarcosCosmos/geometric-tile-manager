@@ -1,15 +1,16 @@
-use crate::geometry::Cardinal;
-use crate::graph::{Graph, NodeId};
-use crate::query::caret::Caret;
-use crate::query::key::NodeKey;
-use crate::query::node::{NodeNotFound, NodeQuery};
-use crate::query::source::{QuerySource, RawQuerySource};
-use crate::query::{ElementInformation, ElementKind, Query, QueryKey};
-use crate::query_impl;
+use crate::caret::Caret;
+use crate::error::KeyedError;
+use crate::graph::NodeId;
+use crate::key::NodeKey;
+use crate::key::{QueryKey, query_impl};
+use crate::node::{NodeNotFound, NodeQuery};
+use crate::query::{ElementInformation, ElementKind, Query};
+use crate::source::{QuerySource, RawQuerySource};
 use markers_derive::QueryKey;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::ops::Deref;
+use crate::iter::KeyIter;
 
 pub trait NeighbourhoodInformation<'a, T>
 where
@@ -153,74 +154,26 @@ impl<'a> NeighbourhoodInformation<'a, Neighbours> for Query<'a, Neighbours> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct NeighbourCaretIter<'a, Iter>
-where
-    Iter: DoubleEndedIterator<Item = &'a NodeId>,
-{
-    context: &'a Graph,
-    inner: Iter,
-    out_direction: Cardinal,
-}
-
-impl<'a, Iter> NeighbourCaretIter<'a, Iter>
-where
-    Iter: DoubleEndedIterator<Item = &'a NodeId>,
-{
-    pub fn new(context: &'a Graph, inner: Iter, out_direction: Cardinal) -> Self {
-        Self {
-            context,
-            inner,
-            out_direction,
-        }
-    }
-}
-
-impl<'a, Iter> Iterator for NeighbourCaretIter<'a, Iter>
-where
-    Iter: DoubleEndedIterator<Item = &'a NodeId>,
-{
-    type Item = Query<'a, Caret>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner
-            .next()
-            .map(|&item| self.context.query(Caret::new(item, self.out_direction)))
-    }
-}
-
-impl<'a, Iter> DoubleEndedIterator for NeighbourCaretIter<'a, Iter>
-where
-    Iter: DoubleEndedIterator<Item = &'a NodeId>,
-{
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.inner
-            .next_back()
-            .map(|&item| self.context.query(Caret::new(item, self.out_direction)))
-    }
-}
-
 impl<'a, T> IntoIterator for Query<'a, T>
 where
-    T: QueryKey + Deref<Target = Caret>,
-    Self: Into<&'a [NodeId]>,
+    Query<'a, T>: NeighbourhoodInformation<'a, T>,
 {
-    type Item = Query<'a, Caret>;
-    type IntoIter = NeighbourCaretIter<'a, std::slice::Iter<'a, NodeId>>;
+    type Item = Query<'a, NodeId>;
+    type IntoIter = KeyIter<'a, NodeId, std::slice::Iter<'a, NodeId>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let side: Cardinal = !(**self).side;
-        NeighbourCaretIter::<'a, _>::new(self.context, self.into().into_iter(), side)
+        KeyIter::new(self.context, self.items().into_iter())
     }
 }
+
 
 impl<T, Node> QuerySource<NeighbourTiles<Node>> for T
 where
-    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = NodeNotFound<Node>>,
-    Node: NodeKey + 'static,
+    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    Node: NodeKey,
 {
     type OutKey = NeighbourTiles;
-    type Error = NodeNotFound<Node>;
+    type Error = KeyedError<Node, NodeNotFound>;
 
     fn try_query(&self, key: NeighbourTiles<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
         Ok(self.query(NeighbourTiles(Caret::new(
@@ -232,11 +185,11 @@ where
 
 impl<T, Node> QuerySource<NeighbourSurfaces<Node>> for T
 where
-    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = NodeNotFound<Node>>,
-    Node: NodeKey + 'static,
+    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    Node: NodeKey,
 {
     type OutKey = NeighbourSurfaces;
-    type Error = NodeNotFound<Node>;
+    type Error = KeyedError<Node, NodeNotFound>;
 
     fn try_query(&self, key: NeighbourSurfaces<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
         Ok(self.query(NeighbourSurfaces(Caret::new(

@@ -1,13 +1,13 @@
+use crate::area::{Area, AreaQuery};
+use crate::caret::{Caret, CaretQuery};
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{AreaBounds, Cardinal};
 use crate::graph::NodeId;
-use crate::query::area::{Area, AreaQuery};
-use crate::query::caret::{Caret, CaretQuery};
-use crate::query::key::{NodeKey, QueryKey};
-use crate::query::line::Line;
-use crate::query::source::RawQuerySource;
+use crate::key::{NodeKey, QueryKey};
+use crate::line::Line;
 use crate::query::{ElementInformation, ElementInformation2D, ElementKind, Query};
 use crate::query_impl;
+use crate::source::RawQuerySource;
 use snafu::{Snafu, ensure};
 use std::fmt::Debug;
 
@@ -100,10 +100,5 @@ where
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
-#[snafu(display("No matching node could be found for key: {key:?}"))]
-pub struct NodeNotFound<Key>
-where
-    Key: NodeKey,
-{
-    key: Key,
-}
+#[snafu(display("No matching node could be found"))]
+pub struct NodeNotFound;

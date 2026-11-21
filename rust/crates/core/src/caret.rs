@@ -1,19 +1,20 @@
 use crate::geometry::{Cardinal, LineBounds, Sign};
 use crate::graph::NodeId;
-use crate::query::key::{NodeKey, QueryKey};
-use crate::query::line::Line;
-use crate::query::neighbours::{NeighbourTiles, NeighbourhoodInformation};
-use crate::query::node::{NodeNotFound, NodeQuery, TooManyNodesError};
-use crate::query::source::{QuerySource, RawQuerySource};
+use crate::key::{NodeKey, QueryKey};
+use crate::line::Line;
+use crate::neighbours::{NeighbourTiles, NeighbourhoodInformation};
+use crate::node::{NodeNotFound, NodeQuery, TooManyNodesError};
 use crate::query::{
     ElementInformation, ElementInformation1D, ElementKind, Navigation, NavigationMut, Query,
 };
 use crate::query_impl;
+use crate::source::{QuerySource, RawQuerySource};
 use markers_derive::QueryKey;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::iter::Map;
 use std::ops::Deref;
+use crate::error::KeyedError;
 
 /// A caret is a position on the side of a node.
 /// they provide the step function for navigating along the gutter of carets parallel to them.
@@ -140,11 +141,11 @@ impl<T: ?Sized> CaretIterExt for T where T: Iterator<Item: Deref<Target = Caret>
 
 impl<T, Node> QuerySource<Caret<Node>> for T
 where
-    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = NodeNotFound<Node>>,
-    Node: NodeKey + 'static,
+    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    Node: NodeKey,
 {
     type OutKey = Caret;
-    type Error = NodeNotFound<Node>;
+    type Error = KeyedError<Node, NodeNotFound>;
 
     fn try_query(&self, key: Caret<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
         Ok(self.query(Caret::new(*self.try_query(key.id)?, key.side)))

@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use uuid::Uuid;
 
-pub trait QueryKey: Sized + Copy + Clone + Debug + Eq + Serialize + DeserializeOwned {
+pub trait QueryKey: Sized + Copy + Clone + Debug + Eq + Serialize + DeserializeOwned + 'static {
     type NodeKey: NodeKey;
 }
 
@@ -46,3 +46,4 @@ macro_rules! query_impl {
         }
     };
 }
+pub(crate) use query_impl;

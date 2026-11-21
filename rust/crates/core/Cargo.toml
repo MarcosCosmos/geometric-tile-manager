@@ -1,7 +1,7 @@
 [lib]
 
 [package]
-name = "core"
+name = "geowm"
 version = "0.1.0"
 edition = "2024"
 

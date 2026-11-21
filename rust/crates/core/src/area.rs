@@ -1,3 +1,6 @@
+use crate::caret::Caret;
+use crate::command::transform::SegmentedArea;
+use crate::error::{QueryError, ValidationError, KeyedError, KeyedSnafu};
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{
@@ -5,19 +8,16 @@ use crate::geometry::{
     SOUTH_EAST, SOUTH_WEST, WEST,
 };
 use crate::graph::NodeId;
-use crate::query::caret::Caret;
-use crate::query::error::{QueryError, ValidationError, WrappedQueryError, WrappedQuerySnafu};
-use crate::query::iter::QueryIteration;
-use crate::query::key::NodeKey;
-use crate::query::line::{Line, LineQuery};
-use crate::query::node::{NodeNotFound, NodeQuery};
-use crate::query::selection::SegmentedArea;
-use crate::query::source::{QuerySource, RawQuerySource};
+use crate::iter::IterativeQueryNavigation;
+use crate::key::NodeKey;
+use crate::key::{QueryKey, query_impl};
+use crate::line::{Line, LineQuery};
+use crate::node::{NodeNotFound, NodeQuery};
 use crate::query::{
     ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GroupInformation,
-    Query, QueryKey,
+    Query,
 };
-use crate::query_impl;
+use crate::source::{QuerySource, RawQuerySource};
 use markers_derive::{QueryKey, ValidationError};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
@@ -367,15 +367,16 @@ impl<'a> AreaQuery for Query<'a, Area> {
 
 impl<T, Node> QuerySource<Area<Node>> for T
 where
-    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = NodeNotFound<Node>>,
-    Node: NodeKey + 'static,
+    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    Node: NodeKey,
+    QueryError<Node, T::Error, AreaProblem>: From<T::Error>
 {
     type OutKey = Area;
 
-    type Error = WrappedQueryError<Area<Node>, QueryError<Line<Node>, AreaProblem>>;
+    type Error = KeyedError<Area<Node>, QueryError<Node, T::Error, AreaProblem>>;
 
     fn try_query(&self, key: Area<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
-        (|| {
+        (||
             Ok(self
                 .query(Area {
                     north_west: *self.try_query(key.north_west)?,
@@ -384,7 +385,7 @@ where
                     south_west: *self.try_query(key.south_west)?,
                 })
                 .into_validated()?)
-        })()
-        .with_context(|_| WrappedQuerySnafu { key })
+        )()
+        .with_context(|_| KeyedSnafu { key })
     }
 }

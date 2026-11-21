@@ -1,19 +1,6 @@
-pub mod area;
-pub mod caret;
-pub mod error;
-pub mod iter;
-pub mod key;
-pub mod line;
-pub mod neighbours;
-pub mod node;
-pub mod point;
-pub mod selection;
-pub mod source;
-
 use crate::geometry::{AreaBounds, LineBounds};
 use crate::graph::{Graph, NodeId};
-use crate::query::key::QueryKey;
-use std::fmt::Debug;
+use crate::key::QueryKey;
 use std::ops::{Deref, Not};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -64,15 +51,15 @@ pub struct Query<'a, Key>
 where
     Key: QueryKey,
 {
-    context: &'a Graph,
-    key: Key,
+    pub(crate) context: &'a Graph,
+    pub(crate) key: Key,
 }
 
 impl<'a, Key> Query<'a, Key>
 where
     Key: QueryKey,
 {
-    pub(super) fn new(context: &'a Graph, key: Key) -> Self {
+    pub(crate) fn new(context: &'a Graph, key: Key) -> Self {
         Self { context, key }
     }
 }

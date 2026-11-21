@@ -1,7 +1,6 @@
 use crate::graph::{Graph, NodeId};
-use crate::query::error::WrappedQueryError;
-use crate::query::{GraphQuery, Query, QueryKey};
-use snafu::AsErrorSource;
+use crate::key::QueryKey;
+use crate::query::{GraphQuery, Query};
 use std::error::Error;
 
 pub trait RawQuerySource {

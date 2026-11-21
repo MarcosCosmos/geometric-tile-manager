@@ -44,23 +44,35 @@ pub fn query_key_derive(input: TokenStream) -> TokenStream {
     .into()
 }
 
-#[proc_macro_derive(SelectionCommand)]
-pub fn selection_command_derive(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(TransformKey, attributes(node))]
+pub fn transform_key_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     quote! {
-        impl #impl_generics Command for #name #ty_generics #where_clause {
-        }
-        impl #impl_generics SelectionCommand for #name #ty_generics #where_clause {
-            type Key = Key;
-            fn key(self) -> Key {
-                self.key
-            }
+        impl #impl_generics TransformKey for #name #ty_generics #where_clause {
         }
     }
     .into()
 }
+
+// #[proc_macro_derive(SelectionCommand)]
+// pub fn selection_command_derive(input: TokenStream) -> TokenStream {
+//     let input = parse_macro_input!(input as DeriveInput);
+//     let name = input.ident;
+//     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+//     quote! {
+//         impl #impl_generics Command for #name #ty_generics #where_clause {
+//         }
+//         impl #impl_generics SelectionCommand for #name #ty_generics #where_clause {
+//             type Key = Key;
+//             fn key(self) -> Key {
+//                 self.key
+//             }
+//         }
+//     }
+//     .into()
+// }
 
 #[proc_macro_derive(Command)]
 pub fn command_derive(input: TokenStream) -> TokenStream {

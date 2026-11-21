@@ -1,17 +1,17 @@
+use crate::area::{Area, AreaQuery};
+use crate::caret::{Caret, CaretQuery};
+use crate::error::{KeyedError, KeyedSnafu, QueryError, ValidationError};
 use crate::geometry::{Cardinal, LineBounds, Sign, Sign::*};
 use crate::graph::NodeId;
-use crate::query::area::{Area, AreaQuery};
-use crate::query::caret::{Caret, CaretQuery};
-use crate::query::error::{QueryError, ValidationError, WrappedQueryError, WrappedQuerySnafu};
-use crate::query::iter::QueryIteration;
-use crate::query::key::{NodeKey, QueryKey};
-use crate::query::node::{NodeNotFound, NodeQuery};
-use crate::query::source::{QuerySource, RawQuerySource};
+use crate::iter::IterativeQueryNavigation;
+use crate::key::{NodeKey, QueryKey};
+use crate::node::{NodeNotFound, NodeQuery};
 use crate::query::{
     ElementInformation, ElementInformation1D, ElementKind, GroupInformation, Navigation,
     NavigationMut, Query,
 };
 use crate::query_impl;
+use crate::source::{QuerySource, RawQuerySource};
 use markers_derive::{QueryKey, ValidationError};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
@@ -91,6 +91,8 @@ pub trait LineQuery: ElementInformation1D + Deref<Target = Line> {
     fn into_validated(self) -> Result<Self, LineProblem>;
     fn with_side(self, side: Cardinal) -> Self;
     fn with_nodes(self, negative_id: NodeId, positive_id: NodeId) -> Self;
+    fn into_opposable(self) -> Option<Self>;
+    fn into_opposing(self) -> Option<Self>;
 }
 
 pub trait LineNavigationMut: NavigationMut + Deref<Target = Line> {
@@ -128,10 +130,12 @@ impl ElementInformation1D for Query<'_, Line> {
 
 impl<'a> GroupInformation for Query<'a, Line> {
     fn is_connected(&self) -> bool {
-        self.into_end(Negative)
-            .into_iter(Positive)
-            .inclusive()
-            .any(|n| n.id == self.negative_id)
+        Query::<NodeId>::try_from(*self).is_ok()
+            || self
+                .into_end(Negative)
+                .into_iter(Positive)
+                .inclusive()
+                .any(|n| n.id == self.negative_id)
     }
 }
 
@@ -192,6 +196,62 @@ impl<'a> LineQuery for Query<'a, Line> {
         self.key.positive_id = positive_id;
         self.into_normalized()
     }
+
+    // /// expand the line's length as far as possible until a wall is reached (todo: add a limiting bounds?)
+    // /// may not keep this function inside core long term but, keeping the code around for now.
+    // /// actually it's simple enough now that I problem won't.
+    // fn into_expanded(self) -> Self {
+    //     self.with_nodes(
+    //         self
+    //             .into_end(Negative)
+    //             .into_iter(Negative)
+    //             .ids()
+    //             .last()
+    //             .unwrap_or(self[Negative]),
+    //         self
+    //             .into_end(Positive)
+    //             .into_iter(Positive)
+    //             .ids()
+    //             .last()
+    //             .unwrap_or(self[Positive])
+    //     )
+    // }
+
+    /// Opposable as in is facing towards an opposing line.
+    /// That is, a line with the same axis-bounds, on the inverse side of the opposing tile(s).
+    fn into_opposable(self) -> Option<Self> {
+        let (cross_neg, cross_pos) = self.side.perpendicular_directions();
+        Some(
+            self.with_nodes(
+                self.into_end(Negative)
+                    .into_iter(Negative)
+                    .inclusive()
+                    .find(|c| c.with_side(cross_neg).peek(self.side.sign).is_some())?
+                    .id,
+                self.into_end(Positive)
+                    .into_iter(Positive)
+                    .inclusive()
+                    .find(|c| c.with_side(cross_neg).peek(self.side.sign).is_some())?
+                    .id,
+            ),
+        )
+    }
+
+    fn into_opposing(self) -> Option<Self> {
+        let (cross_neg, cross_pos) = self.side.perpendicular_directions();
+        let opposing_neg = self
+            .into_end(Negative)
+            .with_side(cross_neg)
+            .into_next(self.side.sign)?;
+        let opposing_pos = self
+            .into_end(Negative)
+            .with_side(cross_pos)
+            .into_next(self.side.sign)?;
+        Some(
+            self.context
+                .query(Line::new(opposing_neg.id, opposing_pos.id, !self.side)),
+        )
+    }
 }
 
 impl Navigation for Query<'_, Line> {
@@ -219,7 +279,12 @@ impl Navigation for Query<'_, Line> {
                     let candidate = Line::new(next_neg.id, next_pos.id, !self.side);
                     assert!(self.context.query(candidate).is_connected());
                     Some(candidate)
-                } else {
+                } else if self.kind() == ElementKind::Surface {
+                    assert_ne!(self.side.sign, direction); // we have to be going in the reverse direction if we got some, otherwise we'd be going into the void!
+                    let candidate = Line::new(next_neg.id, next_pos.id, self.side);
+                    assert!(self.context.query(candidate).is_connected());
+                    Some(candidate)
+            } else {
                     current_neg = next_neg;
                     current_pos = next_neg;
                     loop {
@@ -268,12 +333,13 @@ impl Navigation for Query<'_, Line> {
 
 impl<T, Node> QuerySource<Line<Node>> for T
 where
-    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = NodeNotFound<Node>>,
-    Node: NodeKey + 'static,
+    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    Node: QueryKey + NodeKey,
+    QueryError<Node, T::Error, LineProblem>: From<T::Error>,
 {
     type OutKey = Line<NodeId>;
 
-    type Error = WrappedQueryError<Line<Node>, QueryError<Line<Node>, LineProblem>>;
+    type Error = KeyedError<Line<Node>, QueryError<Node, T::Error, LineProblem>>;
 
     fn try_query(&self, key: Line<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
         (|| {
@@ -286,6 +352,6 @@ where
                 .into_normalized()
                 .into_validated()?)
         })()
-        .with_context(|_| WrappedQuerySnafu { key })
+        .with_context(|_| KeyedSnafu { key })
     }
 }

@@ -1,5 +1,5 @@
-use crate::query::key::QueryKey;
-use crate::query::node::NodeNotFound;
+use crate::key::QueryKey;
+use crate::node::NodeNotFound;
 use snafu::Snafu;
 pub(crate) use std::error::Error;
 
@@ -8,7 +8,7 @@ pub trait ValidationError: Error {}
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
 #[snafu(display("Invalid key {key:?}"))]
-pub struct WrappedQueryError<Key, E>
+pub struct KeyedError<Key, E>
 where
     Key: QueryKey,
     E: Error + 'static,
@@ -19,14 +19,14 @@ where
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
-pub enum QueryError<Key, V>
+pub enum QueryError<Key, T, V>
 where
-    Key: QueryKey + 'static,
-    Key::NodeKey: 'static,
+    Key: QueryKey,
+    T: Error + 'static,
     V: ValidationError + 'static,
 {
     #[snafu(transparent)]
-    NotFound { source: NodeNotFound<Key::NodeKey> },
+    Transitive { source: KeyedError<Key, T> },
     #[snafu(transparent)]
     Invalid { source: V },
 }
