@@ -1,7 +1,7 @@
 pub mod area;
 pub mod caret;
 pub mod command;
-mod edit;
+mod context;
 pub mod error;
 pub mod geometry;
 pub mod graph;
@@ -12,6 +12,4 @@ pub mod neighbours;
 pub mod node;
 pub mod point;
 pub mod query;
-pub mod source;
 pub mod state;
-pub mod collection;

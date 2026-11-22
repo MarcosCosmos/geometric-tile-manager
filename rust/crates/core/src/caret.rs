@@ -1,3 +1,5 @@
+use crate::context::{QueryContext, RawQueryContext};
+use crate::error::KeyedError;
 use crate::geometry::{Cardinal, LineBounds, Sign};
 use crate::graph::NodeId;
 use crate::key::{NodeKey, QueryKey};
@@ -8,13 +10,11 @@ use crate::query::{
     ElementInformation, ElementInformation1D, ElementKind, Navigation, NavigationMut, Query,
 };
 use crate::query_impl;
-use crate::source::{QuerySource, RawQuerySource};
 use markers_derive::QueryKey;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::iter::Map;
 use std::ops::Deref;
-use crate::error::KeyedError;
 
 /// A caret is a position on the side of a node.
 /// they provide the step function for navigating along the gutter of carets parallel to them.
@@ -71,7 +71,7 @@ pub trait CaretNavigationMut: NavigationMut + Deref<Target = Caret> {
 
 impl ElementInformation for Query<'_, Caret> {
     fn kind(&self) -> ElementKind {
-        self.context.query(self.id).kind()
+        Query::new(self.context, self.id).kind()
     }
 }
 
@@ -92,7 +92,7 @@ impl<'a> CaretQuery for Query<'a, Caret> {
     where
         Self: Sized,
     {
-        self.key.id = id;
+        self.id = id;
         self
     }
 
@@ -100,7 +100,7 @@ impl<'a> CaretQuery for Query<'a, Caret> {
     where
         Self: Sized,
     {
-        self.key.side = side;
+        self.side = side;
         self
     }
 }
@@ -114,11 +114,10 @@ impl Navigation for Query<'_, Caret> {
             axis: !self.side.axis,
             sign: direction,
         };
-        self.context
-            .query(NeighbourTiles(*self.with_side(search_direction)))
+        Query::<NeighbourTiles>::from(self.with_side(search_direction))
             .items()
             .iter()
-            .map(|&id| self.context.query(Caret::new(id, self.side)))
+            .map(|&id| Query::new(self.context, Caret::new(id, self.side)))
             .take_while(|c| c.kind() == ElementKind::Tile)
             .find(|&c| c.bounds().side_location == location)
             .map(|c| *c)
@@ -139,9 +138,10 @@ where
 
 impl<T: ?Sized> CaretIterExt for T where T: Iterator<Item: Deref<Target = Caret>> {}
 
-impl<T, Node> QuerySource<Caret<Node>> for T
+impl<T, Node> QueryContext<Caret<Node>> for T
 where
-    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    T: RawQueryContext
+        + QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
     Node: NodeKey,
 {
     type OutKey = Caret;

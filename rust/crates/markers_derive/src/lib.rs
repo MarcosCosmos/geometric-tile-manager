@@ -65,9 +65,9 @@ pub fn transform_key_derive(input: TokenStream) -> TokenStream {
 //         impl #impl_generics Command for #name #ty_generics #where_clause {
 //         }
 //         impl #impl_generics SelectionCommand for #name #ty_generics #where_clause {
-//             type Key = Key;
-//             fn key(self) -> Key {
-//                 self.key
+//             type K = K;
+//             fn key(self) -> K {
+//                 self
 //             }
 //         }
 //     }

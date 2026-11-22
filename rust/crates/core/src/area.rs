@@ -1,6 +1,8 @@
 use crate::caret::Caret;
 use crate::command::transform::SegmentedArea;
-use crate::error::{QueryError, ValidationError, KeyedError, KeyedSnafu};
+use crate::context::QueryContext;
+use crate::context::RawQueryContext;
+use crate::error::{KeyedError, KeyedSnafu, QueryError, ValidationError};
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{
@@ -17,7 +19,6 @@ use crate::query::{
     ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GroupInformation,
     Query,
 };
-use crate::source::{QuerySource, RawQuerySource};
 use markers_derive::{QueryKey, ValidationError};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
@@ -148,18 +149,10 @@ pub trait AreaQuery: ElementInformation2D {
 impl ElementInformation for Query<'_, Area> {
     fn kind(&self) -> ElementKind {
         match (
-            self.context
-                .query(Caret::new(self.north_west, NORTH))
-                .kind(),
-            self.context
-                .query(Caret::new(self.north_east, NORTH))
-                .kind(),
-            self.context
-                .query(Caret::new(self.south_east, NORTH))
-                .kind(),
-            self.context
-                .query(Caret::new(self.south_west, NORTH))
-                .kind(),
+            Query::new(self.context, Caret::new(self.north_west, NORTH)).kind(),
+            Query::new(self.context, Caret::new(self.north_east, NORTH)).kind(),
+            Query::new(self.context, Caret::new(self.south_east, NORTH)).kind(),
+            Query::new(self.context, Caret::new(self.south_west, NORTH)).kind(),
         ) {
             (ElementKind::Tile, ElementKind::Tile, ElementKind::Tile, ElementKind::Tile) => {
                 ElementKind::Tile
@@ -210,33 +203,36 @@ impl<'a> AreaQuery for Query<'a, Area> {
     type NodeQuery = Query<'a, NodeId>;
 
     fn into_side(self, side: Cardinal) -> Self::LineQuery {
-        self.context.query(match side {
-            Cardinal {
-                axis: Horizontal,
-                sign: Negative,
-            } => Line::new(self.north_west, self.south_west, side),
-            Cardinal {
-                axis: Horizontal,
-                sign: Positive,
-            } => Line::new(self.north_east, self.south_east, side),
-            Cardinal {
-                axis: Vertical,
-                sign: Negative,
-            } => Line::new(self.north_east, self.north_west, side),
-            Cardinal {
-                axis: Vertical,
-                sign: Positive,
-            } => Line::new(self.south_east, self.south_west, side),
-        })
+        Query::new(
+            self.context,
+            match side {
+                Cardinal {
+                    axis: Horizontal,
+                    sign: Negative,
+                } => Line::new(self.north_west, self.south_west, side),
+                Cardinal {
+                    axis: Horizontal,
+                    sign: Positive,
+                } => Line::new(self.north_east, self.south_east, side),
+                Cardinal {
+                    axis: Vertical,
+                    sign: Negative,
+                } => Line::new(self.north_east, self.north_west, side),
+                Cardinal {
+                    axis: Vertical,
+                    sign: Positive,
+                } => Line::new(self.south_east, self.south_west, side),
+            },
+        )
     }
 
     fn into_corner(self, corner: Diagonal) -> Self::NodeQuery {
-        self.context.query(self[corner])
+        Query::new(self.context, self[corner])
     }
 
     fn into_validated(self) -> Result<Self, AreaProblem> {
         if [NORTH_WEST, NORTH_EAST, SOUTH_EAST, SOUTH_WEST]
-            .map(|diagonal| *self.into_corner(diagonal).into_surface_of())
+            .map(|diagonal| *self.into_corner(diagonal).into_containing_surface())
             .iter()
             .collect::<HashSet<_>>()
             .len()
@@ -265,29 +261,29 @@ impl<'a> AreaQuery for Query<'a, Area> {
                 axis: Horizontal,
                 sign: Negative,
             } => {
-                self.key[NORTH_WEST] = constraint[Negative];
-                self.key[SOUTH_WEST] = constraint[Positive];
+                self[NORTH_WEST] = constraint[Negative];
+                self[SOUTH_WEST] = constraint[Positive];
             }
             Cardinal {
                 axis: Horizontal,
                 sign: Positive,
             } => {
-                self.key[NORTH_EAST] = constraint[Negative];
-                self.key[SOUTH_EAST] = constraint[Positive];
+                self[NORTH_EAST] = constraint[Negative];
+                self[SOUTH_EAST] = constraint[Positive];
             }
             Cardinal {
                 axis: Vertical,
                 sign: Negative,
             } => {
-                self.key[NORTH_WEST] = constraint[Negative];
-                self.key[NORTH_EAST] = constraint[Positive];
+                self[NORTH_WEST] = constraint[Negative];
+                self[NORTH_EAST] = constraint[Positive];
             }
             Cardinal {
                 axis: Vertical,
                 sign: Positive,
             } => {
-                self.key[SOUTH_WEST] = constraint[Negative];
-                self.key[SOUTH_EAST] = constraint[Positive];
+                self[SOUTH_WEST] = constraint[Negative];
+                self[SOUTH_EAST] = constraint[Positive];
             }
         }
         self
@@ -365,18 +361,18 @@ impl<'a> AreaQuery for Query<'a, Area> {
     }
 }
 
-impl<T, Node> QuerySource<Area<Node>> for T
+impl<T, Node> QueryContext<Area<Node>> for T
 where
-    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    T: QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
     Node: NodeKey,
-    QueryError<Node, T::Error, AreaProblem>: From<T::Error>
+    QueryError<Node, T::Error, AreaProblem>: From<T::Error>,
 {
     type OutKey = Area;
 
     type Error = KeyedError<Area<Node>, QueryError<Node, T::Error, AreaProblem>>;
 
     fn try_query(&self, key: Area<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
-        (||
+        (|| {
             Ok(self
                 .query(Area {
                     north_west: *self.try_query(key.north_west)?,
@@ -385,7 +381,7 @@ where
                     south_west: *self.try_query(key.south_west)?,
                 })
                 .into_validated()?)
-        )()
+        })()
         .with_context(|_| KeyedSnafu { key })
     }
 }

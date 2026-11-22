@@ -1,5 +1,7 @@
 use crate::area::{Area, AreaQuery};
 use crate::caret::{Caret, CaretQuery};
+use crate::context::QueryContext;
+use crate::context::RawQueryContext;
 use crate::error::{KeyedError, KeyedSnafu, QueryError, ValidationError};
 use crate::geometry::{Cardinal, LineBounds, Sign, Sign::*};
 use crate::graph::NodeId;
@@ -11,7 +13,6 @@ use crate::query::{
     NavigationMut, Query,
 };
 use crate::query_impl;
-use crate::source::{QuerySource, RawQuerySource};
 use markers_derive::{QueryKey, ValidationError};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
@@ -152,14 +153,16 @@ impl<'a> LineQuery for Query<'a, Line> {
     type CaretQuery = Query<'a, Caret>;
     type AreaQuery = Query<'a, Area>;
     fn into_end(self, sign: Sign) -> Self::CaretQuery {
-        self.context.query(Caret::new(self[sign], self.side))
+        Query::new(self.context, Caret::new(self[sign], self.side))
     }
 
     fn into_normalized(mut self) -> Self {
         if self.into_end(Negative).bounds().side_location
             > self.into_end(Positive).bounds().side_location
         {
-            std::mem::swap(&mut self.key.negative_id, &mut self.key.positive_id)
+            let tmp = self.positive_id;
+            self.positive_id = self.negative_id;
+            self.negative_id = tmp;
         }
         self
     }
@@ -167,8 +170,8 @@ impl<'a> LineQuery for Query<'a, Line> {
     fn into_validated(self) -> Result<Self, LineProblem> {
         let neg = self.into_end(Negative);
         let pos = self.into_end(Positive);
-        if Query::<NodeId>::from(neg).into_surface_of().deref()
-            != Query::<NodeId>::from(pos).into_surface_of().deref()
+        if Query::<NodeId>::from(neg).into_containing_surface().deref()
+            != Query::<NodeId>::from(pos).into_containing_surface().deref()
         {
             Err(LineProblem::MultipleSurfaces)
         } else if self.into_end(Negative).bounds().side_location
@@ -184,7 +187,7 @@ impl<'a> LineQuery for Query<'a, Line> {
     where
         Self: Sized,
     {
-        self.key.side = side;
+        self.side = side;
         self
     }
 
@@ -192,8 +195,8 @@ impl<'a> LineQuery for Query<'a, Line> {
     where
         Self: Sized,
     {
-        self.key.negative_id = negative_id;
-        self.key.positive_id = positive_id;
+        self.negative_id = negative_id;
+        self.positive_id = positive_id;
         self.into_normalized()
     }
 
@@ -247,10 +250,10 @@ impl<'a> LineQuery for Query<'a, Line> {
             .into_end(Negative)
             .with_side(cross_pos)
             .into_next(self.side.sign)?;
-        Some(
-            self.context
-                .query(Line::new(opposing_neg.id, opposing_pos.id, !self.side)),
-        )
+        Some(Query::new(
+            self.context,
+            Line::new(opposing_neg.id, opposing_pos.id, !self.side),
+        ))
     }
 }
 
@@ -262,13 +265,13 @@ impl Navigation for Query<'_, Line> {
         let mut candidate = *self.with_side(target_side);
         if self.kind() == ElementKind::Tile
             && self.side.sign != direction
-            && self.context.query(candidate).is_connected()
+            && Query::new(self.context, candidate).is_connected()
         {
             Some(candidate)
         } else {
             let (cross_neg, cross_pos) = self.side.perpendicular_directions();
-            let mut current_neg = self.context.query(Caret::new(self.negative_id, cross_neg));
-            let mut current_pos = self.context.query(Caret::new(self.positive_id, cross_pos));
+            let mut current_neg = Query::new(self.context, Caret::new(self.negative_id, cross_neg));
+            let mut current_pos = Query::new(self.context, Caret::new(self.positive_id, cross_pos));
             let mut neg_iter = current_neg.into_iter(direction);
             let mut pos_iter = current_pos.into_iter(direction);
             if let (Some(next_neg), Some(next_pos)) = (neg_iter.next(), pos_iter.next()) {
@@ -277,14 +280,14 @@ impl Navigation for Query<'_, Line> {
                     && self.is_connected()
                 {
                     let candidate = Line::new(next_neg.id, next_pos.id, !self.side);
-                    assert!(self.context.query(candidate).is_connected());
+                    assert!(Query::new(self.context, candidate).is_connected());
                     Some(candidate)
                 } else if self.kind() == ElementKind::Surface {
                     assert_ne!(self.side.sign, direction); // we have to be going in the reverse direction if we got some, otherwise we'd be going into the void!
                     let candidate = Line::new(next_neg.id, next_pos.id, self.side);
-                    assert!(self.context.query(candidate).is_connected());
+                    assert!(Query::new(self.context, candidate).is_connected());
                     Some(candidate)
-            } else {
+                } else {
                     current_neg = next_neg;
                     current_pos = next_neg;
                     loop {
@@ -313,7 +316,7 @@ impl Navigation for Query<'_, Line> {
                         }
 
                         candidate = Line::new(current_neg.id, current_pos.id, target_side);
-                        if !self.context.query(candidate).is_connected()
+                        if !Query::new(self.context, candidate).is_connected()
                             && let (Some(next_neg), Some(next_pos)) =
                                 (neg_iter.next(), pos_iter.next())
                         {
@@ -331,9 +334,9 @@ impl Navigation for Query<'_, Line> {
     }
 }
 
-impl<T, Node> QuerySource<Line<Node>> for T
+impl<T, Node> QueryContext<Line<Node>> for T
 where
-    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    T: QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
     Node: QueryKey + NodeKey,
     QueryError<Node, T::Error, LineProblem>: From<T::Error>,
 {

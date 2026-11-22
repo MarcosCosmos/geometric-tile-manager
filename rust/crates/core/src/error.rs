@@ -8,25 +8,25 @@ pub trait ValidationError: Error {}
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
 #[snafu(display("Invalid key {key:?}"))]
-pub struct KeyedError<Key, E>
+pub struct KeyedError<K, E>
 where
-    Key: QueryKey,
+    K: QueryKey,
     E: Error + 'static,
 {
-    key: Key,
+    key: K,
     source: E,
 }
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
-pub enum QueryError<Key, T, V>
+pub enum QueryError<K, T, V>
 where
-    Key: QueryKey,
+    K: QueryKey,
     T: Error + 'static,
     V: ValidationError + 'static,
 {
     #[snafu(transparent)]
-    Transitive { source: KeyedError<Key, T> },
+    Transitive { source: KeyedError<K, T> },
     #[snafu(transparent)]
     Invalid { source: V },
 }

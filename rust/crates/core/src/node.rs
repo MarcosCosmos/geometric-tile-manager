@@ -1,5 +1,6 @@
 use crate::area::{Area, AreaQuery};
 use crate::caret::{Caret, CaretQuery};
+use crate::context::RawQueryContext;
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{AreaBounds, Cardinal};
 use crate::graph::NodeId;
@@ -7,7 +8,6 @@ use crate::key::{NodeKey, QueryKey};
 use crate::line::Line;
 use crate::query::{ElementInformation, ElementInformation2D, ElementKind, Query};
 use crate::query_impl;
-use crate::source::RawQuerySource;
 use snafu::{Snafu, ensure};
 use std::fmt::Debug;
 
@@ -48,12 +48,12 @@ pub trait NodeQuery: ElementInformation2D {
     type CaretInformation: CaretQuery;
     type AreaInformation: AreaQuery;
     fn into_side(self, side: Cardinal) -> Self::CaretInformation;
-    fn into_surface_of(self) -> Self;
+    fn into_containing_surface(self) -> Self;
 }
 
 impl ElementInformation for Query<'_, NodeId> {
     fn kind(&self) -> ElementKind {
-        if self.context.containing_surface.contains_key(&self.key) {
+        if self.context.containing_surfaces.contains_key(&self) {
             ElementKind::Tile
         } else {
             ElementKind::Surface
@@ -63,7 +63,7 @@ impl ElementInformation for Query<'_, NodeId> {
 
 impl ElementInformation2D for Query<'_, NodeId> {
     fn bounds(&self) -> AreaBounds {
-        self.context.bounds[&self.key]
+        self.context.bounds[&self]
     }
 }
 
@@ -72,16 +72,17 @@ impl<'a> NodeQuery for Query<'a, NodeId> {
     type AreaInformation = Query<'a, Area>;
 
     fn into_side(self, side: Cardinal) -> Query<'a, Caret> {
-        self.context.query(Caret::new(self.key, side))
+        Query::new(self.context, Caret::new(*self, side))
     }
 
-    fn into_surface_of(self) -> Query<'a, NodeId> {
-        self.context.query(
+    fn into_containing_surface(self) -> Query<'a, NodeId> {
+        Query::new(
+            self.context,
             self.context
-                .containing_surface
-                .get(&self.key)
+                .containing_surfaces
+                .get(&*self)
                 .copied()
-                .unwrap_or(self.key),
+                .unwrap_or(*self),
         )
     }
 }
@@ -91,11 +92,11 @@ impl<'a> NodeQuery for Query<'a, NodeId> {
 #[snafu(display(
     "Ambiguous attempt to convert a key that spans multiple nodes into a single node: {key:?}"
 ))]
-pub struct TooManyNodesError<Key>
+pub struct TooManyNodesError<K>
 where
-    Key: QueryKey,
+    K: QueryKey,
 {
-    key: Key,
+    key: K,
 }
 
 #[derive(Debug, Snafu)]

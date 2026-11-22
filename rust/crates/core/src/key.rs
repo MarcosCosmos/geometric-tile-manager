@@ -5,7 +5,9 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use uuid::Uuid;
 
-pub trait QueryKey: Sized + Copy + Clone + Debug + Eq + Serialize + DeserializeOwned + 'static {
+pub trait QueryKey:
+    Sized + Copy + Clone + Debug + Eq + Serialize + DeserializeOwned + 'static
+{
     type NodeKey: NodeKey;
 }
 

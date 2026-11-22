@@ -5,7 +5,7 @@ use geowm::neighbours::{NeighbourSurfaces, NeighbourTiles, NeighbourhoodInformat
 use geowm::query::{
     ElementInformation, ElementInformation1D, ElementKind, Navigation, NavigationMut, Query,
 };
-use geowm::source::{QuerySource, RawQuerySource};
+use geowm::source::{QueryContext, RawQuerySource};
 use std::ops::Deref;
 use uuid::Uuid;
 
@@ -86,7 +86,7 @@ impl<'a, 'b> FocusNavigator<'a, 'b> {
     where
         T: Iterator<Item = Query<Caret>>,
     {
-        let center = self.graph.query(**self).bounds().axis_bounds.center();
+        let center = Query::new(self.graph, **self).bounds().axis_bounds.center();
         Some(
             candidates
                 .min_by(|a, b| {
@@ -111,14 +111,15 @@ impl Deref for FocusNavigator<'_, '_> {
 impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
     type Direction = Cardinal;
     fn peek(&self, direction: Cardinal) -> Option<Caret> {
-        let current = self.graph.query(**self);
+        let current = Query::new(self.graph, **self);
         let candidates = {
             let mut prelims: Query<Neighbours> = match current.kind() {
                 ElementKind::Surface => Query::<NeighbourSurfaces>::from(current).into(),
                 ElementKind::Tile => {
                     let immediate = Query::<NeighbourTiles>::from(current);
                     let items = immediate.items();
-                    if items.len() == 1 && self.graph.query(items[0]).kind() == ElementKind::Surface
+                    if items.len() == 1
+                        && Query::new(self.graph, items[0]).kind() == ElementKind::Surface
                     {
                         Query::<NeighbourSurfaces>::from(current).into()
                     } else {
@@ -138,7 +139,7 @@ impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
                     if distant
                         .items()
                         .iter()
-                        .any(|&id| self.graph.query(id).kind() == ElementKind::Tile)
+                        .any(|&id| Query::new(self.graph, id).kind() == ElementKind::Tile)
                     {
                         distant.into()
                     } else {
@@ -157,7 +158,7 @@ impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
         {
             Some(previous)
         } else if direction.axis != self.side.axis
-            && let Some(caret) = self.graph.query(*self.deref()).peek(direction.sign)
+            && let Some(caret) = Query::new(self.graph, *self.deref()).peek(direction.sign)
         {
             Some(caret)
         } else if let Some(neighbour) =

@@ -1,3 +1,5 @@
+use crate::context::QueryContext;
+use crate::error::{KeyedError, KeyedSnafu};
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{EAST, NORTH, SOUTH, WEST};
@@ -5,13 +7,11 @@ use crate::graph::{Graph, NodeId};
 use crate::key::NodeKey;
 use crate::key::QueryKey;
 use crate::neighbours::{NeighbourTiles, NeighbourhoodInformation};
-use crate::node::{NodeNotFound, NodeNotFoundSnafu, NodeQuery};
+use crate::node::{NodeNotFound, NodeQuery};
 use crate::query::{ElementInformation, ElementKind, Query};
-use crate::source::{QuerySource, RawQuerySource};
 use markers_derive::NodeKey;
 use serde::{Deserialize, Serialize};
-use snafu::{OptionExt, ResultExt};
-use crate::error::{KeyedError, KeyedSnafu};
+use snafu::ResultExt;
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, NodeKey)]
 pub struct Point {
@@ -19,7 +19,7 @@ pub struct Point {
     pub y: i32,
 }
 
-impl QuerySource<Point> for Graph {
+impl QueryContext<Point> for Graph {
     type OutKey = NodeId;
     type Error = KeyedError<Point, NodeNotFound>;
 
@@ -32,7 +32,7 @@ impl QuerySource<Point> for Graph {
                     && bounds[Vertical][Negative] <= key.y
                     && bounds[Vertical][Positive] >= key.y
             })
-            .map(|(&id, _)| self.query(id))
+            .map(|(&id, _)| Query::new(self, id))
             .filter(|node| {
                 node.kind() == ElementKind::Tile
                     || [NORTH, SOUTH, EAST, WEST].into_iter().all(|side| {

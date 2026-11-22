@@ -51,13 +51,13 @@ impl AxisBounds {
     pub fn new(negative: i32, positive: i32) -> Self {
         Self { negative, positive }
     }
-    pub fn size(&self) -> i32 {
+    pub fn len(&self) -> i32 {
         assert!(self.positive >= self.negative);
         self.positive - self.negative
     }
 
     pub fn center(&self) -> f32 {
-        self.negative as f32 + (self.size() as f32 / 2f32)
+        self.negative as f32 + (self.len() as f32 / 2f32)
     }
 
     pub fn cmp(&self, other: &AxisBounds) -> BoundsOrdering {

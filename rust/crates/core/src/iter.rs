@@ -3,9 +3,8 @@ use crate::geometry::Cardinal;
 use crate::graph::{Graph, NodeId};
 use crate::key::QueryKey;
 use crate::query::{Navigation, Query};
-use crate::source::RawQuerySource;
 use std::iter::{Chain, Once};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 pub trait IterativeQueryNavigation: Navigation {
     fn into_next(self, direction: Self::Direction) -> Option<Self>;
@@ -17,12 +16,12 @@ pub trait IterativeQueryNavigation: Navigation {
         NavIter::new(self, direction)
     }
 }
-impl<'a, Key> IterativeQueryNavigation for Query<'a, Key>
+impl<'a, K> IterativeQueryNavigation for Query<'a, K>
 where
-    Query<'a, Key>: Navigation<Target = Key>,
+    Query<'a, K>: Navigation<Target = K>,
 {
     fn into_next(mut self, direction: Self::Direction) -> Option<Self> {
-        self.key = self.peek(direction)?;
+        *self = self.peek(direction)?;
         Some(self)
     }
 }
@@ -73,50 +72,47 @@ where
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct KeyIter<'a, Key, Iter>
+pub struct KeyIter<'a, K, Iter>
 where
-    Key: QueryKey<NodeKey=NodeId>,
-    Iter: Iterator<Item = &'a Key>,
+    K: QueryKey<NodeKey = NodeId>,
+    Iter: Iterator<Item = &'a K>,
 {
     context: &'a Graph,
-    inner: Iter
+    inner: Iter,
 }
 
-impl<'a, Key, Iter> KeyIter<'a, Key, Iter>
+impl<'a, K, Iter> KeyIter<'a, K, Iter>
 where
-    Key: QueryKey<NodeKey=NodeId>,
-    Iter: Iterator<Item = &'a Key>,
+    K: QueryKey<NodeKey = NodeId>,
+    Iter: Iterator<Item = &'a K>,
 {
     pub fn new(context: &'a Graph, inner: Iter) -> Self {
-        Self {
-            context,
-            inner
-        }
+        Self { context, inner }
     }
 }
 
-impl<'a, Key, Iter> Iterator for KeyIter<'a, Key, Iter>
+impl<'a, K, Iter> Iterator for KeyIter<'a, K, Iter>
 where
-    Key: QueryKey<NodeKey=NodeId>,
-    Iter: Iterator<Item = &'a Key>,
+    K: QueryKey<NodeKey = NodeId>,
+    Iter: Iterator<Item = &'a K>,
 {
-    type Item = Query<'a, Key>;
+    type Item = Query<'a, K>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner
             .next()
-            .map(|&item| self.context.query(item))
+            .map(|&item| Query::new(self.context, item))
     }
 }
 
-impl<'a, Key, Iter> DoubleEndedIterator for KeyIter<'a, Key, Iter>
+impl<'a, K, Iter> DoubleEndedIterator for KeyIter<'a, K, Iter>
 where
-    Key: QueryKey<NodeKey=NodeId>,
-    Iter: DoubleEndedIterator<Item = &'a Key>,
+    K: QueryKey<NodeKey = NodeId>,
+    Iter: DoubleEndedIterator<Item = &'a K>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner
             .next_back()
-            .map(|&item| self.context.query(item))
+            .map(|&item| Query::new(self.context, item))
     }
 }

@@ -1,16 +1,17 @@
 use crate::caret::Caret;
+use crate::context::QueryContext;
+use crate::context::RawQueryContext;
 use crate::error::KeyedError;
 use crate::graph::NodeId;
+use crate::iter::KeyIter;
 use crate::key::NodeKey;
 use crate::key::{QueryKey, query_impl};
 use crate::node::{NodeNotFound, NodeQuery};
 use crate::query::{ElementInformation, ElementKind, Query};
-use crate::source::{QuerySource, RawQuerySource};
 use markers_derive::QueryKey;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::ops::Deref;
-use crate::iter::KeyIter;
 
 pub trait NeighbourhoodInformation<'a, T>
 where
@@ -128,7 +129,7 @@ impl ElementInformation for Query<'_, NeighbourSurfaces> {
 
 impl ElementInformation for Query<'_, Neighbours> {
     fn kind(&self) -> ElementKind {
-        match self.key {
+        match **self {
             Neighbours::Tiles(_) => ElementKind::Tile,
             Neighbours::Surfaces(_) => ElementKind::Surface,
         }
@@ -149,7 +150,7 @@ impl<'a> NeighbourhoodInformation<'a, NeighbourSurfaces> for Query<'a, Neighbour
 
 impl<'a> NeighbourhoodInformation<'a, Neighbours> for Query<'a, Neighbours> {
     fn items(&self) -> &'a [NodeId] {
-        let target = self.context.query(self.id).into_surface_of();
+        let target = Query::new(self.context, self.id).into_containing_surface();
         &self.context.surface_neighbourhoods[&target][self.side]
     }
 }
@@ -166,10 +167,9 @@ where
     }
 }
 
-
-impl<T, Node> QuerySource<NeighbourTiles<Node>> for T
+impl<T, Node> QueryContext<NeighbourTiles<Node>> for T
 where
-    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    T: QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
     Node: NodeKey,
 {
     type OutKey = NeighbourTiles;
@@ -183,9 +183,9 @@ where
     }
 }
 
-impl<T, Node> QuerySource<NeighbourSurfaces<Node>> for T
+impl<T, Node> QueryContext<NeighbourSurfaces<Node>> for T
 where
-    T: RawQuerySource + QuerySource<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    T: QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
     Node: NodeKey,
 {
     type OutKey = NeighbourSurfaces;

@@ -1,16 +1,12 @@
-use std::error::Error;
-use crate::QueryKey;
 use crate::area::Area;
-use crate::command::add_tile::AddTile;
-use crate::command::{Command, DeleteNode, MoveLine};
+use crate::command::Command;
 use crate::error::ValidationError;
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{Axis, Sign};
 use crate::key::QueryKey;
-use crate::line::{Line, LineQuery};
-use crate::query::{ElementInformation, GraphQuery, Query};
-use crate::source::{QuerySource, RawQuerySource};
+use crate::line::Line;
+use crate::query::{ElementInformation, GraphQuery, Information};
 use markers_derive::ValidationError;
 use serde::Serialize;
 use snafu::Snafu;
@@ -105,16 +101,48 @@ impl TransformDetails {
             }
         }
     }
+
+    pub fn iter(&self) -> TransformDetailIter<&SegmentedArea> {
+        self.into_iter()
+    }
+}
+
+impl IntoIterator for TransformDetails {
+    type Item = SegmentedArea;
+    type IntoIter = TransformDetailIter<SegmentedArea>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        TransformDetailIter(self.parts())
+    }
+}
+impl<'a> IntoIterator for &'a TransformDetails {
+    type Item = &'a SegmentedArea;
+    type IntoIter = TransformDetailIter<&'a SegmentedArea>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        TransformDetailIter(self.parts_ref())
+    }
+}
+
+pub struct TransformDetailIter<T>((Option<T>, Option<T>));
+
+impl<T> Iterator for TransformDetailIter<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.0.take().or_else(|| self.0.1.take())
+    }
 }
 
 // todo: when we refactor XInformation traits into structs with derived provider traits, the existing TransformDetails will become that struct for transform queries.
-pub trait TransformInformation : ElementInformation {
+pub trait TransformInformation: Information {
     fn details(&self) -> TransformDetails;
 }
 
-pub trait TransformKey: Command + QueryKey + Deref<Target: QueryKey + Into<Line<<Self::Target as QueryKey>::NodeKey>>>
-{
-}
+// pub trait TransformKey:
+//     Command + QueryKey + Deref<Target: QueryKey + Into<Line<<Self::Target as QueryKey>::NodeKey>>>
+// {
+// }
 
 #[derive(Debug, Snafu, ValidationError)]
 pub enum TransformProblem {
@@ -126,58 +154,4 @@ pub trait TransformQuery: GraphQuery {
 
     /// this will vary by command, but for one thing it will generally mean that guide elements that refer to a surface will be shifted to corresponding corners
     fn into_normalized(self) -> Self;
-}
-
-/// this is the method you'd generally use when inserting tiles (unsure what strategy to employ for removals yet)
-/// only works if starting from a tile, which is intended
-/// todo: transform selection will be given it's own query type with the edit command as part of the arg, so it can resolve the correct shape fully.
-fn into_transform_selection(mut self) -> TransformDetails {
-    self.into_validated()
-        .expect("Invalid selection starting line");
-    let inward = self
-        .with_side(self.side)
-        .into_scan_area()
-        .into_segmented(!self.side);
-
-    let maybe_outward_segments = {
-        let (cross_neg, cross_pos) = self.side.perpendicular_directions();
-        let initial_neg = self
-            .into_end(Negative)
-            .with_side(cross_neg)
-            .into_next(!self.side.sign);
-        let initial_pos = self
-            .into_end(Negative)
-            .with_side(cross_pos)
-            .into_next(!self.side.sign);
-        match (initial_neg, initial_pos) {
-            (Some(neg), Some(pos)) => {
-                let reverse_line = self.context.query(Line::new(neg.id, pos.id, !self.side));
-                if reverse_line.is_connected() {
-                    Some(reverse_line.into_scan_area().into_segmented(self.side))
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    };
-
-    // the rest of this is just normalising the above backward/forward parts to collapse intermediate Nones and arranged them in natural order
-    match maybe_outward_segments {
-        (None) => {
-            if self.side.sign == Positive {
-                TransformDetails::Negative(inward)
-            } else {
-                TransformDetails::Positive(inward)
-            }
-        }
-        Some(outward_fragment) => {
-            if self.side.sign == Positive {
-                TransformDetails::Bidirectional(inward, outward_fragment)
-            } else {
-                TransformDetails::Bidirectional(outward_fragment, inward)
-            }
-        }
-        _ => panic!(),
-    }
 }
