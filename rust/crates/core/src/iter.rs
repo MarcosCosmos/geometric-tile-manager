@@ -2,11 +2,11 @@ use crate::caret::Caret;
 use crate::geometry::Cardinal;
 use crate::graph::{Graph, NodeId};
 use crate::key::QueryKey;
-use crate::query::{Navigation, Query};
+use crate::query::{GraphQuery, Navigation, Query};
 use std::iter::{Chain, Once};
 use std::ops::{Deref, DerefMut};
 
-pub trait IterativeQueryNavigation: Navigation {
+pub trait IterativeQueryNavigation: Navigation + Ord {
     fn into_next(self, direction: Self::Direction) -> Option<Self>;
 
     fn into_iter(self, direction: Self::Direction) -> NavIter<Self>
@@ -16,9 +16,9 @@ pub trait IterativeQueryNavigation: Navigation {
         NavIter::new(self, direction)
     }
 }
-impl<'a, K> IterativeQueryNavigation for Query<'a, K>
+impl<'a, T> IterativeQueryNavigation for T
 where
-    Query<'a, K>: Navigation<Target = K>,
+    T: GraphQuery + Navigation,
 {
     fn into_next(mut self, direction: Self::Direction) -> Option<Self> {
         *self = self.peek(direction)?;

@@ -6,7 +6,7 @@ use std::hash::Hash;
 use uuid::Uuid;
 
 pub trait QueryKey:
-    Sized + Copy + Clone + Debug + Eq + Serialize + DeserializeOwned + 'static
+    Sized + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned + 'static
 {
     type NodeKey: NodeKey;
 }

@@ -7,17 +7,25 @@ use crate::iter::KeyIter;
 use crate::key::NodeKey;
 use crate::key::{QueryKey, query_impl};
 use crate::node::{NodeNotFound, NodeQuery};
-use crate::query::{ElementInformation, ElementKind, Query};
+use crate::query::{ElementInformation, ElementKind, GraphQuery, Query};
 use markers_derive::QueryKey;
 use serde::{Deserialize, Serialize};
+use std::collections::linked_list::IterMut;
 use std::fmt::Debug;
-use std::ops::Deref;
+use std::vec::IntoIter;
 
-pub trait NeighbourhoodInformation<'a, T>
-where
-    Self: ElementInformation<Target = T>,
+pub trait NeighbourhoodQuery:
+    GraphQuery + IntoIterator<Item: NodeQuery, IntoIter: DoubleEndedIterator>
 {
-    fn items(&self) -> &'a [NodeId];
+}
+
+trait NeighbourhoodQueryImpl<'a> {
+    type Items: IntoIterator<Item = &'a NodeId, IntoIter: DoubleEndedIterator>;
+    fn items(&self) -> Self::Items;
+}
+
+pub trait NeighbourSurfacesQuery: NeighbourhoodQuery {
+    fn into_normalised(self) -> Self;
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
@@ -79,42 +87,6 @@ query_impl! { From<Caret> for NeighbourTiles }
 query_impl! { From<Caret> for NeighbourSurfaces }
 query_impl! { From<NeighbourTiles | NeighbourSurfaces> for Neighbours }
 
-impl<Node> Deref for NeighbourTiles<Node>
-where
-    Node: NodeKey,
-{
-    type Target = Caret<Node>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<Node> Deref for NeighbourSurfaces<Node>
-where
-    Node: NodeKey,
-{
-    type Target = Caret<Node>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<Node> Deref for Neighbours<Node>
-where
-    Node: NodeKey,
-{
-    type Target = Caret<Node>;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Neighbours::Tiles(tile) => tile.deref(),
-            Neighbours::Surfaces(surface) => surface.deref(),
-        }
-    }
-}
-
 impl ElementInformation for Query<'_, NeighbourTiles> {
     fn kind(&self) -> ElementKind {
         ElementKind::Tile
@@ -136,31 +108,57 @@ impl ElementInformation for Query<'_, Neighbours> {
     }
 }
 
-impl<'a> NeighbourhoodInformation<'a, NeighbourTiles> for Query<'a, NeighbourTiles> {
-    fn items(&self) -> &'a [NodeId] {
-        &self.context.tile_neighbourhoods[&self.id][self.side]
+impl<'a, T> NeighbourhoodQuery for Query<'a, T>
+where
+    T: QueryKey + Into<Caret<T::NodeKey>>,
+    Self: IntoIterator<Item = Query<'a, NodeId>, IntoIter: DoubleEndedIterator>,
+{
+}
+
+impl<'a> NeighbourhoodQueryImpl<'a> for Query<'a, NeighbourTiles> {
+    type Items = &'a [NodeId];
+
+    fn items(&self) -> Self::Items {
+        &self.context.tile_neighbourhoods[&self.0.id][self.0.side]
     }
 }
 
-impl<'a> NeighbourhoodInformation<'a, NeighbourSurfaces> for Query<'a, NeighbourSurfaces> {
-    fn items(&self) -> &'a [NodeId] {
-        &self.context.surface_neighbourhoods[&self.id][self.side]
+impl<'a> NeighbourhoodQueryImpl<'a> for Query<'a, NeighbourSurfaces> {
+    type Items = &'a [NodeId];
+
+    fn items(&self) -> Self::Items {
+        &self.context.surface_neighbourhoods[&self.0.id][self.0.side]
     }
 }
 
-impl<'a> NeighbourhoodInformation<'a, Neighbours> for Query<'a, Neighbours> {
-    fn items(&self) -> &'a [NodeId] {
-        let target = Query::new(self.context, self.id).into_containing_surface();
-        &self.context.surface_neighbourhoods[&target][self.side]
+impl<'a> NeighbourhoodQueryImpl<'a> for Query<'a, Neighbours> {
+    type Items = &'a [NodeId];
+    fn items(&self) -> Self::Items {
+        match **self {
+            Neighbours::Tiles(key) => Query::new(self.context, key).items(),
+            Neighbours::Surfaces(key) => Query::new(self.context, key).items(),
+        }
+    }
+}
+
+impl NeighbourSurfacesQuery for Query<'_, NeighbourSurfaces> {
+    fn into_normalised(mut self) -> Self {
+        self.0.id = *Query::<NodeId>::from(Query::<Caret>::from(self)).into_containing_surface();
+        self
     }
 }
 
 impl<'a, T> IntoIterator for Query<'a, T>
 where
-    Query<'a, T>: NeighbourhoodInformation<'a, T>,
+    Query<'a, T>: NeighbourhoodQueryImpl<'a>,
+    T: QueryKey,
 {
     type Item = Query<'a, NodeId>;
-    type IntoIter = KeyIter<'a, NodeId, std::slice::Iter<'a, NodeId>>;
+    type IntoIter = KeyIter<
+        'a,
+        NodeId,
+        <<Query<'a, T> as NeighbourhoodQueryImpl<'a>>::Items as IntoIterator>::IntoIter,
+    >;
 
     fn into_iter(self) -> Self::IntoIter {
         KeyIter::new(self.context, self.items().into_iter())
@@ -176,9 +174,10 @@ where
     type Error = KeyedError<Node, NodeNotFound>;
 
     fn try_query(&self, key: NeighbourTiles<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
+        let caret: Caret<Node> = key.into();
         Ok(self.query(NeighbourTiles(Caret::new(
-            *self.try_query(key.id)?,
-            key.side,
+            *self.try_query(caret.id)?,
+            caret.side,
         ))))
     }
 }
@@ -192,9 +191,12 @@ where
     type Error = KeyedError<Node, NodeNotFound>;
 
     fn try_query(&self, key: NeighbourSurfaces<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
-        Ok(self.query(NeighbourSurfaces(Caret::new(
-            *self.try_query(key.id)?,
-            key.side,
-        ))))
+        let caret: Caret<Node> = key.into();
+        Ok(self
+            .query(NeighbourSurfaces(Caret::new(
+                *self.try_query(caret.id)?,
+                caret.side,
+            )))
+            .into_normalised())
     }
 }

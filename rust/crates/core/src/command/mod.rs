@@ -26,7 +26,7 @@ pub trait Command: Copy + Clone + Debug + Eq + PartialEq + Serialize + Deseriali
 /// - If there is a guide selection/line that doesn't need to be expanded to be usable, it should usually be preferred, as expanding carries a risk of pancaking another tile into invisibility.
 // pub enum Guide<T>()
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, SelectionCommand)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DeleteNode<K = Caret>
 where
     K: QueryKey + Into<Caret<K::NodeKey>> + Into<Line<K::NodeKey>>,
@@ -34,7 +34,7 @@ where
     pub key: K,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, SelectionCommand)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MoveLine<K = Line>
 where
     K: QueryKey + Into<Line<K::NodeKey>>,
@@ -78,7 +78,7 @@ where
     type Error = T::Error;
 
     fn try_execute(&mut self, command: Com) -> Result<Self::Response, Self::Error> {
-        let out_com = *self.try_query(command)?;
+        let out_com = *(*self).try_query(command)?;
         Ok(self.execute(out_com))
     }
 }

@@ -4,14 +4,15 @@ use crate::geometry::{Cardinal, LineBounds, Sign};
 use crate::graph::NodeId;
 use crate::key::{NodeKey, QueryKey};
 use crate::line::Line;
-use crate::neighbours::{NeighbourTiles, NeighbourhoodInformation};
+use crate::neighbours::{NeighbourSurfaces, NeighbourTiles, Neighbours};
 use crate::node::{NodeNotFound, NodeQuery, TooManyNodesError};
 use crate::query::{
     ElementInformation, ElementInformation1D, ElementKind, Navigation, NavigationMut, Query,
 };
-use crate::query_impl;
+use crate::{node, query_impl};
 use markers_derive::QueryKey;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::iter::Map;
 use std::ops::Deref;
@@ -52,9 +53,37 @@ where
     }
 }
 
-query_impl! { <T> From<T> for Caret where T: QueryKey<NodeKey=NodeId> + Deref<Target=Caret> }
+impl<Node> From<NeighbourTiles<Node>> for Caret<Node>
+where
+    Node: NodeKey,
+{
+    fn from(value: NeighbourTiles<Node>) -> Self {
+        value.0
+    }
+}
 
-query_impl! { TryFrom<Line> for Caret }
+impl<Node> From<NeighbourSurfaces<Node>> for Caret<Node>
+where
+    Node: NodeKey,
+{
+    fn from(value: NeighbourSurfaces<Node>) -> Self {
+        value.0
+    }
+}
+
+impl<Node> From<Neighbours<Node>> for Caret<Node>
+where
+    Node: NodeKey,
+{
+    fn from(value: Neighbours<Node>) -> Self {
+        match value {
+            Neighbours::Tiles(NeighbourTiles(caret)) => caret,
+            Neighbours::Surfaces(NeighbourSurfaces(caret)) => caret,
+        }
+    }
+}
+
+query_impl! { From<NeighbourTiles | NeighbourSurfaces | Neighbours> | TryFrom<Line> for Caret }
 
 pub trait CaretQuery: Deref<Target = Caret> {
     type NodeQuery: NodeQuery;
@@ -105,6 +134,12 @@ impl<'a> CaretQuery for Query<'a, Caret> {
     }
 }
 
+impl Ord for Query<'_, Caret> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.bounds().axis_bounds.cmp(&other.bounds().axis_bounds)
+    }
+}
+
 impl Navigation for Query<'_, Caret> {
     type Direction = Sign;
 
@@ -115,9 +150,8 @@ impl Navigation for Query<'_, Caret> {
             sign: direction,
         };
         Query::<NeighbourTiles>::from(self.with_side(search_direction))
-            .items()
-            .iter()
-            .map(|&id| Query::new(self.context, Caret::new(id, self.side)))
+            .into_iter()
+            .map(|node| node.into_side(self.side))
             .take_while(|c| c.kind() == ElementKind::Tile)
             .find(|&c| c.bounds().side_location == location)
             .map(|c| *c)

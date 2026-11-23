@@ -1,8 +1,8 @@
-use crate::error::ValidationError;
 use crate::area::{Area, AreaQuery};
-use crate::command::{Command, RawCommandExecutor};
 use crate::command::transform::{TransformDetails, TransformInformation};
+use crate::command::{Command, RawCommandExecutor};
 use crate::context::QueryContext;
+use crate::error::ValidationError;
 use crate::error::{KeyedError, KeyedSnafu, QueryError};
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
@@ -18,12 +18,10 @@ use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu, ensure};
 use std::ops::Deref;
 
-#[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey, Command
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey, Command)]
 pub struct ResizeSurface<Node = NodeId>
 where
-    Node: NodeKey
+    Node: NodeKey,
 {
     pub key: Node,
     pub new_bounds: AreaBounds,
@@ -31,10 +29,13 @@ where
 
 impl<Node> ResizeSurface<Node>
 where
-    Node: NodeKey
+    Node: NodeKey,
 {
     pub fn new(key: Node, new_bounds: AreaBounds) -> Self {
-        Self { key: key, new_bounds }
+        Self {
+            key: key,
+            new_bounds,
+        }
     }
 }
 
@@ -50,16 +51,18 @@ pub trait ResizeSurfaceQuery: Sized {
 impl TransformInformation for Query<'_, ResizeSurface> {
     fn details(&self) -> TransformDetails {
         TransformDetails::Positive(
-            Query::new(self.context, Area::from(self.key)).into_segmented(Cardinal::new(Horizontal, Negative))
+            Query::new(self.context, Area::from(self.key))
+                .into_segmented(Cardinal::new(Horizontal, Negative)),
         )
     }
 }
 
-
-impl ResizeSurfaceQuery for Query<'_, ResizeSurface>
-{
+impl ResizeSurfaceQuery for Query<'_, ResizeSurface> {
     fn into_validated(self) -> Result<Self, NotASurface> {
-        ensure!(Query::new(self.context, self.key).kind() == ElementKind::Surface, NotASurfaceSnafu);
+        ensure!(
+            Query::new(self.context, self.key).kind() == ElementKind::Surface,
+            NotASurfaceSnafu
+        );
         Ok(self)
     }
 
@@ -72,7 +75,7 @@ impl ResizeSurfaceQuery for Query<'_, ResizeSurface>
 impl<Node, T> QueryContext<ResizeSurface<Node>> for T
 where
     Node: QueryKey + NodeKey,
-    T: QueryContext<Node, OutKey=NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    T: QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
     QueryError<Node, T::Error, NotASurface>: From<T::Error>,
 {
     type OutKey = ResizeSurface;
@@ -82,20 +85,32 @@ where
     fn try_query(&self, key: ResizeSurface<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
         (|| {
             Ok(self
-                .query(ResizeSurface::new(*self.try_query(key.key)?, key.new_bounds))
+                .query(ResizeSurface::new(
+                    *self.try_query(key.key)?,
+                    key.new_bounds,
+                ))
                 .into_normalized()
                 .into_validated()?)
         })()
-            .with_context(|_| KeyedSnafu { key })
+        .with_context(|_| KeyedSnafu { key })
     }
 }
-
 
 impl RawCommandExecutor<ResizeSurface> for Graph {
     type Response = ();
 
     fn execute(&mut self, command: ResizeSurface) -> Self::Response {
-        self.transform_node(command.key, Horizontal, command.new_bounds[Horizontal], Positive);
-        self.transform_node(command.key, Vertical, command.new_bounds[Horizontal], Positive);
+        self.transform_node(
+            command.key,
+            Horizontal,
+            command.new_bounds[Horizontal],
+            Positive,
+        );
+        self.transform_node(
+            command.key,
+            Vertical,
+            command.new_bounds[Horizontal],
+            Positive,
+        );
     }
 }

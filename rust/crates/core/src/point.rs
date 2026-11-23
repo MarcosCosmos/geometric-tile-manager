@@ -6,7 +6,7 @@ use crate::geometry::{EAST, NORTH, SOUTH, WEST};
 use crate::graph::{Graph, NodeId};
 use crate::key::NodeKey;
 use crate::key::QueryKey;
-use crate::neighbours::{NeighbourTiles, NeighbourhoodInformation};
+use crate::neighbours::NeighbourTiles;
 use crate::node::{NodeNotFound, NodeQuery};
 use crate::query::{ElementInformation, ElementKind, Query};
 use markers_derive::NodeKey;
@@ -37,9 +37,9 @@ impl QueryContext<Point> for Graph {
                 node.kind() == ElementKind::Tile
                     || [NORTH, SOUTH, EAST, WEST].into_iter().all(|side| {
                         Query::<NeighbourTiles>::from(node.into_side(side))
-                            .items()
-                            .len()
-                            == 0
+                            .into_iter()
+                            .next()
+                            .is_none()
                     })
             })
             .next()

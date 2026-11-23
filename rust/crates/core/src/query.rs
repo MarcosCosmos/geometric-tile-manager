@@ -1,6 +1,8 @@
+use crate::caret::Caret;
 use crate::geometry::{AreaBounds, LineBounds};
 use crate::graph::{Graph, NodeId};
 use crate::key::QueryKey;
+use std::cmp::Ordering;
 use std::ops::{Deref, DerefMut, Not};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -35,7 +37,7 @@ pub trait GroupQuery: GroupInformation + TryInto<Self::NodeQuery> {
     type NodeQuery;
 }
 
-pub trait Navigation: Deref<Target: QueryKey> + Sized {
+pub trait Navigation: Deref<Target: QueryKey> + Sized + Ord {
     type Direction: Copy + Not<Output = Self::Direction>;
 
     fn peek(&self, direction: Self::Direction) -> Option<Self::Target>;
@@ -109,4 +111,25 @@ where
     Query<'a, NodeId>: From<Query<'a, K>>,
 {
     type NodeQuery = Query<'a, NodeId>;
+}
+
+impl<K> PartialEq<Self> for Query<'_, K>
+where
+    K: QueryKey,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl<K> Eq for Query<'_, K> where K: QueryKey {}
+
+impl<K> PartialOrd<Self> for Query<'_, K>
+where
+    K: QueryKey,
+    Self: Ord,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }

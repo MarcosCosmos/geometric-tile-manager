@@ -1,7 +1,7 @@
 use crate::key::QueryKey;
 use crate::node::NodeNotFound;
 use snafu::Snafu;
-pub(crate) use std::error::Error;
+use std::error::Error;
 
 pub trait ValidationError: Error {}
 

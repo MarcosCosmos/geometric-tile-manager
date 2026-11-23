@@ -1,21 +1,21 @@
 use crate::area::{Area, AreaQuery};
-use crate::caret::Caret;
+use crate::caret::{Caret, CaretQuery};
 use crate::command::transform::SegmentedArea;
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu};
 use crate::geometry::{
-    AreaBounds, Axis, Axis::*, AxisBounds, BoundsOrdering, Cardinal, Sign, Sign::*,
+    AreaBounds, Axis, Axis::*, AxisBounds, BoundsAlignment, Cardinal, Sign, Sign::*,
 };
 use crate::iter::IterativeQueryNavigation;
 use crate::key::NodeKey;
 use crate::key::QueryKey;
 use crate::line::{Line, LineQuery};
-use crate::neighbours::{NeighbourTiles, NeighbourhoodInformation};
-use crate::node::NodeNotFound;
+use crate::neighbours::{NeighbourSurfaces, NeighbourTiles, NeighbourhoodQuery};
+use crate::node::{NodeNotFound, NodeQuery};
 use crate::query::{
-    ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, Query,
+    ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GraphQuery, Query,
 };
-use itertools::Itertools;
+use itertools::{Itertools, any};
 use markers_derive::NodeKey;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
@@ -23,7 +23,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::ops::{Index, IndexMut};
+use std::ops::{Deref, Index, IndexMut};
 use uuid::Uuid;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, NodeKey)]
@@ -54,7 +54,7 @@ pub(crate) struct NeighbourhoodGroup {
 /// - Gaps may be present either on the inside of a surface or between tiles; in htis sense gaps would potentially alter poorly written algorithms
 /// - Storing tiles seperately from neighboy
 #[derive(Clone, Debug, Default)]
-pub struct Graph {
+pub(crate) struct Graph {
     pub(crate) bounds: HashMap<NodeId, AreaBounds>,
     pub(crate) containing_surfaces: HashMap<NodeId, NodeId>,
     /// Note: each surface has an entry in its own interior neighbourhood.
@@ -242,56 +242,99 @@ impl Graph {
         }
     }
 
-    // todo: remove code clones here.
+    fn find_insertion_index<T>(&self, destination: T, target: NodeId) -> Option<usize>
+    where
+        T: QueryKey + Into<Caret>,
+        for<'a> Query<'a, T>: IntoIterator<Item = Query<'a, NodeId>>,
+        for<'a> Query<'a, Caret>: Ord + PartialOrd,
+    {
+        let side = Into::<Caret>::into(destination).side;
+        let destination = Query::new(self, destination);
+        if !destination.into_iter().any(|node| *node == target) {
+            let target = Query::new(self, Caret::new(target, side));
+            Some(
+                destination
+                    .into_iter()
+                    .position(|sib| sib.into_side(target.side) <= target)
+                    .unwrap(),
+            )
+        } else {
+            None
+        }
+    }
 
-    pub(crate) fn update_connections(
-        &mut self,
-        scope: Line,
-        replacement_neg: NodeId,
-        replacement_pos: NodeId,
-    ) {
-        let replacement_scope = Line::new(replacement_neg, replacement_pos, scope.side);
+    fn link<T>(&mut self, a: T, b: T)
+    where
+        T: QueryKey + Into<Caret>,
+        for<'a> Query<'a, T>: IntoIterator<Item = Query<'a, NodeId>>,
+        for<'a> Query<'a, Caret>: Ord + PartialOrd,
+        Self: NeighbourIndexMut<T>,
+    {
+        debug_assert_eq!(a.into().side, !b.into().side);
+        let a_id = a.into().id;
+        let b_id = b.into().id;
+
+        if let Some(index) = self.find_insertion_index(a, b_id) {
+            self.neighbours_mut(a).insert(index, b_id);
+        }
+
+        if let Some(index) = self.find_insertion_index(b, a_id) {
+            self.neighbours_mut(b).insert(index, a_id);
+        }
+    }
+
+    fn unlink<T>(&mut self, a: T, b: T)
+    where
+        T: QueryKey + Into<Caret>,
+        for<'a> Query<'a, T>: NeighbourhoodQuery,
+        Self: NeighbourIndexMut<T>,
+    {
+        debug_assert_eq!(a.into().side, !b.into().side);
+        self.neighbours_mut(a).retain(|id| id != &b.into().id);
+        self.neighbours_mut(b).retain(|id| id != &a.into().id)
+    }
+
+    pub(crate) fn replace_connections(&mut self, original: Line, replacement: Line) {
         let (full_replacement_bounds, replacements) = {
-            let replacement_scope = Query::new(self, replacement_scope);
+            let replacement = Query::new(self, replacement);
             (
-                replacement_scope.bounds().axis_bounds,
-                replacement_scope
+                replacement.bounds().axis_bounds,
+                replacement
                     .into_end(Negative)
                     .into_iter(Positive)
-                    .take_while_inclusive(|caret| caret.id != scope[Positive])
+                    .take_while_inclusive(|caret| caret.id != original[Positive])
                     .map(|c| *c)
                     .collect::<Vec<_>>(),
             )
         };
 
-        let originals: Vec<_> = Query::new(self, scope)
+        let originals: Vec<_> = Query::new(self, original)
             .into_end(Negative)
             .into_iter(Positive)
-            .take_while_inclusive(|caret| caret.id != scope[Positive])
+            .take_while_inclusive(|caret| caret.id != original[Positive])
             .map(|c| *c)
             .collect();
 
         let opposites: Vec<_> = originals
             .iter()
-            .flat_map(|&caret| Query::new(self, NeighbourTiles(caret)).items().iter())
-            .copied()
+            .flat_map(|&caret| {
+                Query::new(self, NeighbourTiles(caret))
+                    .into_iter()
+                    .map(|query| *query)
+            })
             .collect();
 
         for original_caret in originals {
             for &opposing_id in &opposites {
-                let opposing_caret = Caret::new(opposing_id, !scope.side);
+                let opposing_caret = Caret::new(opposing_id, !original.side);
                 let opposing_bounds = Query::new(self, opposing_caret).bounds().axis_bounds;
-                match full_replacement_bounds.cmp(&opposing_bounds) {
-                    BoundsOrdering::Before | BoundsOrdering::After => {}
+                match full_replacement_bounds.alignment(&opposing_bounds) {
+                    BoundsAlignment::Before | BoundsAlignment::After => {}
                     _ => {
-                        self.tile_neighbourhoods
-                            .get_mut(&original_caret.id)
-                            .unwrap()[original_caret.side]
-                            .retain(|id| *id != opposing_id);
-                        self.tile_neighbourhoods
-                            .get_mut(&opposing_caret.id)
-                            .unwrap()[!opposing_caret.side]
-                            .retain(|id| *id != original_caret.id);
+                        self.unlink(
+                            NeighbourTiles(original_caret),
+                            NeighbourTiles(opposing_caret),
+                        );
                     }
                 }
             }
@@ -300,43 +343,13 @@ impl Graph {
 
             for &replacement_caret in &replacements {
                 let replacement_bounds = Query::new(self, replacement_caret).bounds().axis_bounds;
-                match replacement_bounds.cmp(&original_bounds) {
-                    BoundsOrdering::Before | BoundsOrdering::After => {}
+                match replacement_bounds.alignment(&original_bounds) {
+                    BoundsAlignment::Before | BoundsAlignment::After => {}
                     _ => {
-                        let index_for_original =
-                            Query::new(self, NeighbourTiles(replacement_caret))
-                                .items()
-                                .partition_point(|&sib_id| {
-                                    Ordering::Greater
-                                        != Query::new(
-                                            self,
-                                            Caret::new(sib_id, replacement_caret.side),
-                                        )
-                                        .bounds()
-                                        .axis_bounds
-                                        .cmp(&original_bounds)
-                                        .into()
-                                });
-                        self.tile_neighbourhoods
-                            .get_mut(&replacement_caret.id)
-                            .unwrap()[replacement_caret.side]
-                            .insert(index_for_original, original_caret.id);
-
-                        let index_for_replacement =
-                            Query::new(self, NeighbourTiles(original_caret))
-                                .items()
-                                .partition_point(|&sib_id| {
-                                    Ordering::Greater
-                                        != Query::new(self, Caret::new(sib_id, original_caret.side))
-                                            .bounds()
-                                            .axis_bounds
-                                            .cmp(&replacement_bounds)
-                                            .into()
-                                });
-                        self.tile_neighbourhoods
-                            .get_mut(&original_caret.id)
-                            .unwrap()[original_caret.side]
-                            .insert(index_for_replacement, replacement_caret.id);
+                        self.link(
+                            NeighbourTiles(original_caret),
+                            NeighbourTiles(replacement_caret),
+                        );
                     }
                 }
             }
@@ -344,7 +357,7 @@ impl Graph {
     }
 
     /// note: the replacements are attached to the scope, since it's possible that at this stage the scope has no opposites yet
-    pub(crate) fn repair_connections(&mut self, target: Line) {
+    pub(crate) fn update_connections(&mut self, target: Line) {
         let targets: Vec<_> = Query::new(self, target)
             .into_end(Negative)
             .into_iter(Positive)
@@ -354,8 +367,11 @@ impl Graph {
 
         let opposites: Vec<_> = targets
             .iter()
-            .flat_map(|&caret| Query::new(self, NeighbourTiles(caret)).items().iter())
-            .copied()
+            .flat_map(|&caret| {
+                Query::new(self, NeighbourTiles(caret))
+                    .into_iter()
+                    .map(|query| *query)
+            })
             .collect();
 
         for target_caret in targets {
@@ -363,58 +379,39 @@ impl Graph {
             for &opposing_id in &opposites {
                 let opposing_caret = Caret::new(opposing_id, !target.side);
                 let opposing_bounds = Query::new(self, opposing_caret).bounds().axis_bounds;
-                match target_bounds.cmp(&opposing_bounds) {
-                    BoundsOrdering::Before | BoundsOrdering::After => {
-                        self.tile_neighbourhoods.get_mut(&target_caret.id).unwrap()
-                            [target_caret.side]
-                            .retain(|id| *id != opposing_id);
-                        self.tile_neighbourhoods
-                            .get_mut(&opposing_caret.id)
-                            .unwrap()[!opposing_caret.side]
-                            .retain(|id| *id != target_caret.id);
+                match target_bounds.alignment(&opposing_bounds) {
+                    BoundsAlignment::Before | BoundsAlignment::After => {
+                        self.unlink(NeighbourTiles(target_caret), NeighbourTiles(opposing_caret));
                     }
                     _ => {
-                        if !Query::new(self, NeighbourTiles(target_caret))
-                            .items()
-                            .contains(&opposing_caret.id)
-                        {
-                            let index_for_target = Query::new(self, NeighbourTiles(opposing_caret))
-                                .items()
-                                .partition_point(|&sib_id| {
-                                    Ordering::Greater
-                                        != Query::new(self, Caret::new(sib_id, opposing_caret.side))
-                                            .bounds()
-                                            .axis_bounds
-                                            .cmp(&target_bounds)
-                                            .into()
-                                });
-                            self.tile_neighbourhoods
-                                .get_mut(&opposing_caret.id)
-                                .unwrap()[opposing_caret.side]
-                                .insert(index_for_target, target_caret.id);
-
-                            let index_for_replacement =
-                                Query::new(self, NeighbourTiles(target_caret))
-                                    .items()
-                                    .partition_point(|&sib_id| {
-                                        Ordering::Greater
-                                            != Query::new(
-                                                self,
-                                                Caret::new(sib_id, target_caret.side),
-                                            )
-                                            .bounds()
-                                            .axis_bounds
-                                            .cmp(&opposing_bounds)
-                                            .into()
-                                    });
-                            self.tile_neighbourhoods.get_mut(&target_caret.id).unwrap()
-                                [target_caret.side]
-                                .insert(index_for_replacement, opposing_caret.id);
-                        }
+                        self.link(NeighbourTiles(target_caret), NeighbourTiles(opposing_caret));
                     }
                 }
             }
         }
+    }
+}
+
+/// a mirror of the index trait specifically to facilitate neighbourhood queries.
+/// Don't want to make it public because I don't want to expose the implementation details of the graph other than through queries.
+trait NeighbourIndexMut<Idx>
+where
+    Idx: QueryKey + Into<Caret>,
+{
+    fn neighbours_mut(&mut self, index: Idx) -> &mut Vec<NodeId>;
+}
+
+impl NeighbourIndexMut<NeighbourTiles> for Graph {
+    fn neighbours_mut(&mut self, index: NeighbourTiles) -> &mut Vec<NodeId> {
+        let caret: Caret = index.into();
+        &mut self.tile_neighbourhoods.get_mut(&caret.id).unwrap()[caret.side]
+    }
+}
+
+impl NeighbourIndexMut<NeighbourSurfaces> for Graph {
+    fn neighbours_mut(&mut self, index: NeighbourSurfaces) -> &mut Vec<NodeId> {
+        let caret: Caret = index.into();
+        &mut self.surface_neighbourhoods.get_mut(&caret.id).unwrap()[caret.side]
     }
 }
 

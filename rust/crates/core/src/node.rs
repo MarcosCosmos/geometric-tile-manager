@@ -2,7 +2,7 @@ use crate::area::{Area, AreaQuery};
 use crate::caret::{Caret, CaretQuery};
 use crate::context::RawQueryContext;
 use crate::geometry::Sign::{Negative, Positive};
-use crate::geometry::{AreaBounds, Cardinal};
+use crate::geometry::{AreaBounds, Cardinal, NORTH_EAST, NORTH_WEST, SOUTH_EAST, SOUTH_WEST};
 use crate::graph::NodeId;
 use crate::key::{NodeKey, QueryKey};
 use crate::line::Line;
@@ -33,12 +33,12 @@ impl<'a> TryFrom<Area> for NodeId {
 
     fn try_from(value: Area) -> Result<Self, Self::Error> {
         ensure!(
-            value.north_west == value.north_east
-                && value.north_west == value.south_east
-                && value.north_west == value.south_west,
+            value[NORTH_WEST] == value[NORTH_EAST]
+                && value[NORTH_WEST] == value[SOUTH_EAST]
+                && value[NORTH_WEST] == value[SOUTH_WEST],
             TooManyNodesSnafu { key: value }
         );
-        Ok(value.north_west)
+        Ok(value[NORTH_WEST])
     }
 }
 

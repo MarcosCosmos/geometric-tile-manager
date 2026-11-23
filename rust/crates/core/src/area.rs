@@ -36,10 +36,10 @@ pub struct Area<Node = NodeId>
 where
     Node: NodeKey,
 {
-    pub north_west: Node,
-    pub north_east: Node,
-    pub south_west: Node,
-    pub south_east: Node,
+    north_west: Node,
+    north_east: Node,
+    south_west: Node,
+    south_east: Node,
 }
 
 impl<Node> From<Node> for Area<Node>

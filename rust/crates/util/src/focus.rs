@@ -1,11 +1,10 @@
 use geowm::caret::{Caret, CaretNavigationMut};
 use geowm::geometry::{Axis, Cardinal, Sign};
 use geowm::graph::{Graph, NodeId};
-use geowm::neighbours::{NeighbourSurfaces, NeighbourTiles, NeighbourhoodInformation, Neighbours};
+use geowm::neighbours::{NeighbourSurfaces, NeighbourTiles, Neighbours};
 use geowm::query::{
     ElementInformation, ElementInformation1D, ElementKind, Navigation, NavigationMut, Query,
 };
-use geowm::source::{QueryContext, RawQuerySource};
 use std::ops::Deref;
 use uuid::Uuid;
 
@@ -117,9 +116,8 @@ impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
                 ElementKind::Surface => Query::<NeighbourSurfaces>::from(current).into(),
                 ElementKind::Tile => {
                     let immediate = Query::<NeighbourTiles>::from(current);
-                    let items = immediate.items();
-                    if items.len() == 1
-                        && Query::new(self.graph, items[0]).kind() == ElementKind::Surface
+                    if let Some(node) = immediate.into_iter().next()
+                        && &&node.kind() == ElementKind::Surface
                     {
                         Query::<NeighbourSurfaces>::from(current).into()
                     } else {
@@ -137,9 +135,8 @@ impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
                         .graph
                         .query(NeighbourTiles(Caret::new(next_surface_id, direction)));
                     if distant
-                        .items()
-                        .iter()
-                        .any(|&id| Query::new(self.graph, id).kind() == ElementKind::Tile)
+                        .into_iter()
+                        .any(|node| node.kind() == ElementKind::Tile)
                     {
                         distant.into()
                     } else {

@@ -16,6 +16,7 @@ use crate::query_impl;
 use markers_derive::{QueryKey, ValidationError};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
+use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::ops::{Deref, Index, IndexMut};
 
@@ -254,6 +255,14 @@ impl<'a> LineQuery for Query<'a, Line> {
             self.context,
             Line::new(opposing_neg.id, opposing_pos.id, !self.side),
         ))
+    }
+}
+
+impl Ord for Query<'_, Line> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.bounds()
+            .side_location
+            .cmp(&other.bounds().side_location)
     }
 }
 

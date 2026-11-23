@@ -1,8 +1,11 @@
+use crate::key::QueryKey;
+use crate::graph::NodeId;
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::ops::{Index, IndexMut, Not};
+use markers_derive::QueryKey;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Axis {
@@ -16,14 +19,15 @@ pub enum Sign {
     Positive,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, QueryKey)]
+#[node(NodeId)]
 pub struct AxisBounds {
     negative: i32,
     positive: i32,
 }
 
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
-pub enum BoundsOrdering {
+pub enum BoundsAlignment {
     Before,
     PartiallyBefore,
     Contains,
@@ -33,16 +37,16 @@ pub enum BoundsOrdering {
     After,
 }
 
-impl Into<Ordering> for BoundsOrdering {
+impl Into<Ordering> for BoundsAlignment {
     fn into(self) -> Ordering {
         match self {
-            BoundsOrdering::Before | BoundsOrdering::PartiallyBefore | BoundsOrdering::Contains => {
-                Ordering::Less
-            }
-            BoundsOrdering::Parallel => Ordering::Equal,
-            BoundsOrdering::ContainedBy
-            | BoundsOrdering::PartiallyAfter
-            | BoundsOrdering::After => Ordering::Greater,
+            BoundsAlignment::Before
+            | BoundsAlignment::PartiallyBefore
+            | BoundsAlignment::Contains => Ordering::Less,
+            BoundsAlignment::Parallel => Ordering::Equal,
+            BoundsAlignment::ContainedBy
+            | BoundsAlignment::PartiallyAfter
+            | BoundsAlignment::After => Ordering::Greater,
         }
     }
 }
@@ -60,30 +64,30 @@ impl AxisBounds {
         self.negative as f32 + (self.len() as f32 / 2f32)
     }
 
-    pub fn cmp(&self, other: &AxisBounds) -> BoundsOrdering {
+    pub fn alignment(&self, other: &AxisBounds) -> BoundsAlignment {
         if self.negative < other.negative {
             if self.positive < other.negative {
-                BoundsOrdering::Before
+                BoundsAlignment::Before
             } else if self.negative < other.positive {
-                BoundsOrdering::PartiallyBefore
+                BoundsAlignment::PartiallyBefore
             } else {
-                BoundsOrdering::Contains
+                BoundsAlignment::Contains
             }
         } else if self.negative > other.negative {
             if self.negative > other.positive {
-                BoundsOrdering::After
+                BoundsAlignment::After
             } else if self.positive > other.positive {
-                BoundsOrdering::PartiallyAfter
+                BoundsAlignment::PartiallyAfter
             } else {
-                BoundsOrdering::ContainedBy
+                BoundsAlignment::ContainedBy
             }
         } else {
             if self.positive < other.positive {
-                BoundsOrdering::ContainedBy
+                BoundsAlignment::ContainedBy
             } else if self.positive > other.positive {
-                BoundsOrdering::Contains
+                BoundsAlignment::Contains
             } else {
-                BoundsOrdering::Parallel
+                BoundsAlignment::Parallel
             }
         }
     }
@@ -91,7 +95,7 @@ impl AxisBounds {
     /// splits the target bounds into two portions:
     /// - the first is the portion of the bounds that lie inside these bounds, and the second is a delta that when added first results in the original.
     pub fn clamp(self, other: &AxisBounds) -> AxisBounds {
-        assert_ne!(self.cmp(&other), BoundsOrdering::Contains);
+        assert_ne!(self.alignment(&other), BoundsAlignment::Contains);
         AxisBounds {
             negative: self.negative.clamp(other.negative, other.positive),
             positive: self.positive.clamp(other.negative, other.positive),
@@ -123,6 +127,18 @@ impl IndexMut<Sign> for AxisBounds {
             Negative => &mut self.negative,
             Positive => &mut self.positive,
         }
+    }
+}
+
+impl PartialOrd<Self> for AxisBounds {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for AxisBounds {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.alignment(other).into()
     }
 }
 
