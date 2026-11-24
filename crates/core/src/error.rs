@@ -1,5 +1,4 @@
 use crate::key::QueryKey;
-use crate::node::NodeNotFound;
 use snafu::Snafu;
 use std::error::Error;
 

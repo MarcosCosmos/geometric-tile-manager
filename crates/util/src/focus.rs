@@ -1,9 +1,12 @@
-use geowm_core::context::QueryContext;
 use geowm_core::caret::{Caret, CaretNavigationMut};
-use geowm_core::geometry::{Axis, Cardinal, Sign, Sign::{*}};
+use geowm_core::context::QueryContext;
+use geowm_core::geometry::{Axis, Cardinal, Sign, Sign::*};
 use geowm_core::graph::{Graph, NodeId};
 use geowm_core::neighbours::{NeighbourSurfaces, NeighbourTiles, Neighbours};
-use geowm_core::query::{ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, Navigation, NavigationMut, Query};
+use geowm_core::query::{
+    ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, Navigation,
+    NavigationMut, Query,
+};
 use std::ops::Deref;
 use uuid::Uuid;
 pub struct FocusState {
@@ -50,6 +53,12 @@ impl FocusState {
     }
 }
 
+impl Default for FocusState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct FocusNavigator<'a, 'b> {
     state: &'a mut FocusState,
     graph: &'b Graph,
@@ -84,15 +93,12 @@ impl<'a, 'b> FocusNavigator<'a, 'b> {
         T: Iterator<Item = Query<'a, NodeId>>,
     {
         let center = Query::new(self.graph, **self).bounds().axis_bounds.center();
-        Some(
-            *candidates
-                .min_by(|a, b| {
-                    f32::total_cmp(
-                        &f32::abs(a.bounds()[axis].center() - center),
-                        &f32::abs(b.bounds()[axis].center() - center),
-                    )
-                })?,
-        )
+        Some(*candidates.min_by(|a, b| {
+            f32::total_cmp(
+                &f32::abs(a.bounds()[axis].center() - center),
+                &f32::abs(b.bounds()[axis].center() - center),
+            )
+        })?)
     }
 }
 
@@ -104,12 +110,12 @@ impl Deref for FocusNavigator<'_, '_> {
     }
 }
 
-impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
+impl Navigation for FocusNavigator<'_, '_> {
     type Direction = Cardinal;
     fn peek(&self, direction: Cardinal) -> Option<Caret> {
         let current = Query::new(self.graph, **self);
         let candidates = {
-            let mut prelims: Query<Neighbours> = match current.kind() {
+            let prelims: Query<Neighbours> = match current.kind() {
                 ElementKind::Surface => Query::<NeighbourSurfaces>::from(current).into(),
                 ElementKind::Tile => {
                     let immediate = Query::<NeighbourTiles>::from(current);
@@ -128,8 +134,10 @@ impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
                     if let Some(next_surface_id) =
                         self.nearest_by_centers(prelims.into_iter(), direction.axis) =>
                 {
-                    let distant = Query::new(self
-                        .graph, NeighbourTiles(Caret::new(next_surface_id, direction)));
+                    let distant = Query::new(
+                        self.graph,
+                        NeighbourTiles(Caret::new(next_surface_id, direction)),
+                    );
                     if distant
                         .into_iter()
                         .any(|node| node.kind() == ElementKind::Tile)
@@ -154,12 +162,9 @@ impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
             && let Some(caret) = Query::new(self.graph, *self.deref()).peek(direction.sign)
         {
             Some(caret)
-        } else if let Some(neighbour) =
-            self.nearest_by_centers(candidates.into_iter(), direction.axis)
-        {
-            Some(Caret::new(neighbour, !direction))
         } else {
-            None
+            self.nearest_by_centers(candidates.into_iter(), direction.axis)
+                .map(|neighbour| Caret::new(neighbour, !direction))
         }
     }
 }
@@ -178,10 +183,10 @@ impl NavigationMut for FocusNavigator<'_, '_> {
     /// Returns none if there is no neighbour to focus in the given direction
     /// Note: if the result is none, the current focus is unchanged
     fn next(&mut self, direction: Cardinal) -> Option<&mut Self> {
-        /// for now, we try not to assume that the state memory is up to date
-        /// we'll have to decide whether or not to deliberately clean it after operations but for now it is relatively safer to do a check
-        /// also this draft doesn't currently account for content swapping, which would probably be supported by mapping layer instead of managing more complex graph manipulations
-        /// for that we will probably need id type parameterisation for carets, e.g. with a newtype for outer ids, and have outer ids be what is stored in the nav state.
+        // for now, we try not to assume that the state memory is up to date
+        // we'll have to decide whether or not to deliberately clean it after operations but for now it is relatively safer to do a check
+        // also this draft doesn't currently account for content swapping, which would probably be supported by mapping layer instead of managing more complex graph manipulations
+        // for that we will probably need id type parameterisation for carets, e.g. with a newtype for outer ids, and have outer ids be what is stored in the nav state.
         let destination = self.peek(direction)?;
         if direction.axis == self.state.history_axis {
             let past = self.history_mut(direction.sign);

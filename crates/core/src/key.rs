@@ -1,8 +1,6 @@
-use crate::graph::NodeId;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::fmt::Debug;
-use std::hash::Hash;
 use uuid::Uuid;
 
 pub trait QueryKey:
@@ -16,7 +14,7 @@ pub trait QueryKey:
 impl QueryKey for Uuid {
     // type NodeKey = Self;
 }
-// 
+//
 // pub trait NodeKey: QueryKey {}
 
 #[macro_export]

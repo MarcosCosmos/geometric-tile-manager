@@ -5,7 +5,7 @@ use crate::error::{KeyedError, KeyedSnafu, QueryError, ValidationError};
 use crate::geometry::{Cardinal, LineBounds, Sign, Sign::*};
 use crate::graph::NodeId;
 use crate::iter::IterativeQueryNavigation;
-use crate::key::{QueryKey};
+use crate::key::QueryKey;
 use crate::node::{NodeNotFound, NodeQuery};
 use crate::query::{
     ElementInformation, ElementInformation1D, ElementKind, GroupInformation, Navigation,
@@ -223,7 +223,7 @@ impl<'a> LineQuery for Query<'a, Line> {
     /// Opposable as in is facing towards an opposing line.
     /// That is, a line with the same axis-bounds, on the inverse side of the opposing tile(s).
     fn into_opposable(self) -> Option<Self> {
-        let (cross_neg, cross_pos) = self.side.perpendicular_directions();
+        let (cross_neg, _cross_pos) = self.side.perpendicular_directions();
         Some(
             self.with_nodes(
                 self.into_end(Negative)
@@ -352,15 +352,18 @@ where
 
     type Error = KeyedError<Line<Node>, QueryError<Node, T::Error, LineProblem>>;
 
-    fn try_query(&self, key: Line<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
+    fn try_query(&self, key: Line<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         (|| {
-            Ok(Query::new(self.as_ref(), Line::new(
+            Ok(Query::new(
+                self.as_ref(),
+                Line::new(
                     *self.try_query(key[Negative])?,
                     *self.try_query(key[Positive])?,
                     key.side,
-                ))
-                .into_normalized()
-                .into_validated()?)
+                ),
+            )
+            .into_normalized()
+            .into_validated()?)
         })()
         .with_context(|_| KeyedSnafu { key })
     }

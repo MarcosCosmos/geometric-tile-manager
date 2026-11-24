@@ -3,7 +3,7 @@ use crate::graph::NodeId;
 use crate::iter::KeyIter;
 use crate::key::QueryKey;
 use crate::query::{ElementInformation2D, Query};
-use markers_derive::{Command, QueryKey, TransformKey};
+use markers_derive::QueryKey;
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::Keys;
 

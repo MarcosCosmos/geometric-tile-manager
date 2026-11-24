@@ -5,8 +5,8 @@ use crate::error::{KeyedError, KeyedSnafu, QueryError, ValidationError};
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{
-    AreaBounds, Axis, AxisBounds, BoundsAlignment, Cardinal, NORTH_EAST, NORTH_WEST, SOUTH_EAST,
-    SOUTH_WEST, Sign, WEST,
+    AreaBounds, Axis, AxisBounds, Cardinal, NORTH_EAST, NORTH_WEST, SOUTH_EAST, SOUTH_WEST, Sign,
+    WEST,
 };
 use crate::graph::{Graph, NodeId};
 use crate::iter::IterativeQueryNavigation;
@@ -318,13 +318,16 @@ where
 
     type Error = KeyedError<Transform<K, B>, QueryError<K, T::Error, TransformError>>;
 
-    fn try_query(&self, key: Transform<K, B>) -> Result<Query<Self::OutKey>, Self::Error> {
+    fn try_query(&self, key: Transform<K, B>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         (|| {
             let area: Area = *Into::<Query<Area>>::into(self.try_query(key.target)?);
-            Ok(Query::new(self.as_ref(), Transform::new(area, key.axis, key.intended_bounds))
-                .try_into()?
-                .into_normalized()
-                .into_validated()?)
+            Ok(Query::new(
+                self.as_ref(),
+                Transform::new(area, key.axis, key.intended_bounds),
+            )
+            .try_into()?
+            .into_normalized()
+            .into_validated()?)
         })()
         .with_context(|_| KeyedSnafu { key })
     }
@@ -350,14 +353,14 @@ impl RawCommandExecutor<Transform> for Graph {
             let area = Query::new(self, negative_area.area());
             let mut new_bounds = area.bounds()[command.axis];
             new_bounds[Positive] = command.intended_bounds[Negative] - 1;
-            let side_line = *area.into_side(Cardinal::new(command.axis, Positive));
+            let _side_line = *area.into_side(Cardinal::new(command.axis, Positive));
             self.transform_area(negative_area, new_bounds, Negative);
         }
         if let Some(positive_area) = details.part(Negative) {
             let area = Query::new(self, positive_area.area());
             let mut new_bounds = area.bounds()[command.axis];
             new_bounds[Positive] = command.intended_bounds[Positive] + 1;
-            let side_line = *area.into_side(Cardinal::new(command.axis, Negative));
+            let _side_line = *area.into_side(Cardinal::new(command.axis, Negative));
             self.transform_area(positive_area, new_bounds, Positive);
         }
 

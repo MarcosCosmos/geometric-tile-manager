@@ -20,9 +20,9 @@ impl RawCommandExecutor<AddSurface> for Graph {
 
     fn execute(&mut self, command: AddSurface) -> Self::Response {
         let id = NodeId::new();
-        self.bounds.insert(id.into(), *command);
+        self.bounds.insert(id, *command);
         self.tile_neighbourhoods
-            .insert(id.into(), NeighbourhoodGroup::new());
+            .insert(id, NeighbourhoodGroup::new());
         self.surface_neighbourhoods
             .insert(id, NeighbourhoodGroup::new());
         id

@@ -1,4 +1,4 @@
-use crate::context::{QueryContext};
+use crate::context::QueryContext;
 use crate::error::KeyedError;
 use crate::geometry::{Cardinal, LineBounds, Sign};
 use crate::graph::NodeId;
@@ -9,7 +9,7 @@ use crate::node::{NodeNotFound, NodeQuery, TooManyNodesError};
 use crate::query::{
     ElementInformation, ElementInformation1D, ElementKind, Navigation, NavigationMut, Query,
 };
-use crate::{node, query_impl};
+use crate::query_impl;
 use markers_derive::QueryKey;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -180,7 +180,10 @@ where
     type OutKey = Caret;
     type Error = KeyedError<Node, NodeNotFound>;
 
-    fn try_query(&self, key: Caret<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
-        Ok(Query::new(self.as_ref(), Caret::new(*self.try_query(key.id)?, key.side)))
+    fn try_query(&self, key: Caret<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+        Ok(Query::new(
+            self.as_ref(),
+            Caret::new(*self.try_query(key.id)?, key.side),
+        ))
     }
 }

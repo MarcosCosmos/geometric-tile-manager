@@ -27,7 +27,7 @@ pub fn query_key_derive(input: TokenStream) -> TokenStream {
     //     .iter()
     //     .filter(|a| a.path().segments.len() == 1 && a.path().segments[0].ident == "node")
     //     .nth(0);
-    // 
+    //
     // let node_key = if let Some(attr) = attribute {
     //     let result: Expr = attr
     //         .parse_args()

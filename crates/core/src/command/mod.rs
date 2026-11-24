@@ -1,8 +1,8 @@
 use crate::context::QueryContext;
 use crate::key::QueryKey;
 use markers_derive::Command;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::error::Error;
 use std::fmt::Debug;
 
@@ -12,13 +12,13 @@ pub mod transform;
 
 pub trait Command: Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned {}
 
-/// guides are a todo: demo first.
-/// A guide for how to execute certain commands. Can be either strict or hint;
-/// If hint, the algorithm will try to resolve it into a more reasonable selection if possible.
-/// Additionally, commands will fail if a strict guide is invalid, but proceed if a hint is invalid.
-/// Guides are mostly lines but may later be extended to include bounding boxes for limiting a resize?
-/// A good example of the importance of hinting is deleting a tile:
-/// - If there is a guide selection/line that doesn't need to be expanded to be usable, it should usually be preferred, as expanding carries a risk of pancaking another tile into invisibility.
+// guides are a todo: demo first.
+// A guide for how to execute certain commands. Can be either strict or hint;
+// If hint, the algorithm will try to resolve it into a more reasonable selection if possible.
+// Additionally, commands will fail if a strict guide is invalid, but proceed if a hint is invalid.
+// Guides are mostly lines but may later be extended to include bounding boxes for limiting a resize?
+// A good example of the importance of hinting is deleting a tile:
+// - If there is a guide selection/line that doesn't need to be expanded to be usable, it should usually be preferred, as expanding carries a risk of pancaking another tile into invisibility.
 // pub enum Guide<T>()
 
 pub trait RawCommandExecutor<Com>

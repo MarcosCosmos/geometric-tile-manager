@@ -12,7 +12,7 @@ use crate::graph::NodeId;
 use crate::iter::IterativeQueryNavigation;
 use crate::key::{QueryKey, query_impl};
 use crate::line::{Line, LineQuery};
-use crate::node::{NodeQuery};
+use crate::node::NodeQuery;
 use crate::query::{
     ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GroupInformation,
     Query,
@@ -242,7 +242,7 @@ impl<'a> AreaQuery for Query<'a, Area> {
                 .into_iter()
                 .filter(|&side| self.into_side(side).into_validated().is_err())
                 .collect();
-            if bad_sides.len() > 0 {
+            if !bad_sides.is_empty() {
                 Err(AreaProblem::WrongOrder { bad_sides })
             } else {
                 Ok(self)
@@ -371,13 +371,16 @@ where
 
     fn try_query(&self, key: Area<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         (|| {
-            Ok(Query::new(self.as_ref(), Area {
+            Ok(Query::new(
+                self.as_ref(),
+                Area {
                     north_west: *self.try_query(key.north_west)?,
                     north_east: *self.try_query(key.north_east)?,
                     south_east: *self.try_query(key.south_east)?,
                     south_west: *self.try_query(key.south_west)?,
-                })
-                .into_validated()?)
+                },
+            )
+            .into_validated()?)
         })()
         .with_context(|_| KeyedSnafu { key })
     }

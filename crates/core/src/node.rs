@@ -3,7 +3,7 @@ use crate::caret::{Caret, CaretQuery};
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{AreaBounds, Cardinal, NORTH_EAST, NORTH_WEST, SOUTH_EAST, SOUTH_WEST};
 use crate::graph::NodeId;
-use crate::key::{QueryKey};
+use crate::key::QueryKey;
 use crate::line::Line;
 use crate::query::{ElementInformation, ElementInformation2D, ElementKind, Query};
 use crate::query_impl;
@@ -27,7 +27,7 @@ impl TryFrom<Line> for NodeId {
     }
 }
 
-impl<'a> TryFrom<Area> for NodeId {
+impl TryFrom<Area> for NodeId {
     type Error = TooManyNodesError<Area>;
 
     fn try_from(value: Area) -> Result<Self, Self::Error> {
@@ -52,7 +52,7 @@ pub trait NodeQuery: ElementInformation2D {
 
 impl ElementInformation for Query<'_, NodeId> {
     fn kind(&self) -> ElementKind {
-        if self.context.containing_surfaces.contains_key(&self) {
+        if self.context.containing_surfaces.contains_key(self) {
             ElementKind::Tile
         } else {
             ElementKind::Surface
@@ -62,7 +62,7 @@ impl ElementInformation for Query<'_, NodeId> {
 
 impl ElementInformation2D for Query<'_, NodeId> {
     fn bounds(&self) -> AreaBounds {
-        self.context.bounds[&self]
+        self.context.bounds[self]
     }
 }
 

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 pub trait NeighbourhoodQuery:
-GraphQuery + IntoIterator<Item: NodeQuery, IntoIter: DoubleEndedIterator>
+    GraphQuery + IntoIterator<Item: NodeQuery, IntoIter: DoubleEndedIterator>
 {
 }
 
@@ -111,14 +111,12 @@ where
 }
 
 impl<'a> NeighbourhoodQueryImpl<'a> for Query<'a, NeighbourTiles> {
-
     fn items(&self) -> &'a [NodeId] {
         &self.context.tile_neighbourhoods[&self.0.id][self.0.side]
     }
 }
 
 impl<'a> NeighbourhoodQueryImpl<'a> for Query<'a, NeighbourSurfaces> {
-
     fn items(&self) -> &'a [NodeId] {
         &self.context.surface_neighbourhoods[&self.0.id][self.0.side]
     }
@@ -146,14 +144,10 @@ where
     T: QueryKey,
 {
     type Item = Query<'a, NodeId>;
-    type IntoIter = KeyIter<
-        'a,
-        NodeId,
-        std::slice::Iter<'a, NodeId>,
-    >;
+    type IntoIter = KeyIter<'a, NodeId, std::slice::Iter<'a, NodeId>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        KeyIter::new(self.context, self.items().into_iter())
+        KeyIter::new(self.context, self.items().iter())
     }
 }
 
@@ -165,12 +159,12 @@ where
     type OutKey = NeighbourTiles;
     type Error = KeyedError<Node, NodeNotFound>;
 
-    fn try_query(&self, key: NeighbourTiles<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
+    fn try_query(&self, key: NeighbourTiles<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         let caret: Caret<Node> = key.into();
-        Ok(Query::new(self.as_ref(), NeighbourTiles(Caret::new(
-            *self.try_query(caret.id)?,
-            caret.side,
-        ))))
+        Ok(Query::new(
+            self.as_ref(),
+            NeighbourTiles(Caret::new(*self.try_query(caret.id)?, caret.side)),
+        ))
     }
 }
 
@@ -182,12 +176,15 @@ where
     type OutKey = NeighbourSurfaces;
     type Error = KeyedError<Node, NodeNotFound>;
 
-    fn try_query(&self, key: NeighbourSurfaces<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
+    fn try_query(
+        &self,
+        key: NeighbourSurfaces<Node>,
+    ) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         let caret: Caret<Node> = key.into();
-        Ok(Query::new(self.as_ref(), NeighbourSurfaces(Caret::new(
-                *self.try_query(caret.id)?,
-                caret.side,
-            )))
-            .into_normalised())
+        Ok(Query::new(
+            self.as_ref(),
+            NeighbourSurfaces(Caret::new(*self.try_query(caret.id)?, caret.side)),
+        )
+        .into_normalised())
     }
 }

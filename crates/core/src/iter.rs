@@ -1,10 +1,8 @@
-use crate::caret::Caret;
-use crate::geometry::Cardinal;
-use crate::graph::{Graph, NodeId};
+use crate::graph::Graph;
 use crate::key::QueryKey;
 use crate::query::{GraphQuery, Navigation, Query};
 use std::iter::{Chain, Once};
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 
 pub trait IterativeQueryNavigation: GraphQuery + Navigation + Ord {
     fn into_next(self, direction: Self::Direction) -> Option<Self>;
@@ -16,7 +14,7 @@ pub trait IterativeQueryNavigation: GraphQuery + Navigation + Ord {
         NavIter::new(self, direction)
     }
 }
-impl<'a, T> IterativeQueryNavigation for T
+impl<T> IterativeQueryNavigation for T
 where
     T: GraphQuery + Navigation + Ord,
 {

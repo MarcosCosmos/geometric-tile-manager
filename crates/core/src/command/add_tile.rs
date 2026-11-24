@@ -5,7 +5,7 @@ use crate::command::{Command, RawCommandExecutor};
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu, QueryError};
 use crate::geometry::Sign::{Negative, Positive};
-use crate::geometry::{AreaBounds, AxisBounds, BoundsAlignment, Cardinal};
+use crate::geometry::{AreaBounds, AxisBounds, Cardinal};
 use crate::graph::{Graph, NodeId};
 use crate::iter::IterativeQueryNavigation;
 use crate::key::QueryKey;
@@ -113,8 +113,7 @@ impl TransformQuery for Query<'_, AddTile> {
             Err(TransformError::NotConnected)?
         }
 
-        if self.kind() == ElementKind::Surface
-            && destination.peek(!destination.side.sign).is_some()
+        if self.kind() == ElementKind::Surface && destination.peek(!destination.side.sign).is_some()
         {
             Err(TransformError::IncompatibleSurroundings)?
         }
@@ -208,13 +207,15 @@ where
 
     type Error = KeyedError<AddTile<K, B>, QueryError<K, T::Error, TransformError>>;
 
-    fn try_query(&self, key: AddTile<K, B>) -> Result<Query<Self::OutKey>, Self::Error> {
+    fn try_query(&self, key: AddTile<K, B>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         (|| {
             let line: Line = *Into::<Query<Line>>::into(self.try_query(key.destination)?);
-            Ok(Query::new(self.as_ref(), AddTile::new(line, key.intended_bounds))
-                .try_into()?
-                .into_normalized()
-                .into_validated()?)
+            Ok(
+                Query::new(self.as_ref(), AddTile::new(line, key.intended_bounds))
+                    .try_into()?
+                    .into_normalized()
+                    .into_validated()?,
+            )
         })()
         .with_context(|_| KeyedSnafu { key })
     }
@@ -233,7 +234,7 @@ impl<'a> TryInto<Query<'a, AddTile>> for Query<'a, AddTile<Line, Auto>> {
                 .unwrap()
                 .bounds()[destination.side.axis]
         } else if let Some(details) = self.details() {
-            let (mut space, segment_count): (i32, i32) =
+            let (space, segment_count): (i32, i32) =
                 details.iter().fold((0, 0), |acc, segmented| {
                     (
                         acc.0
@@ -242,7 +243,7 @@ impl<'a> TryInto<Query<'a, AddTile>> for Query<'a, AddTile<Line, Auto>> {
                                 .iter()
                                 .map(|&area| {
                                     Query::new(self.context, area).bounds()[destination.side.axis]
-                                        .len()
+                                        .extent()
                                 })
                                 .sum::<i32>(),
                         acc.1 + (segmented.segments.len() as i32),
@@ -274,7 +275,7 @@ impl RawCommandExecutor<AddTile> for Graph {
         let initial_bounds = Query::new(self, command).bounds();
         // move most of this into transform's execution
         self.tile_neighbourhoods
-            .insert(id.into(), crate::graph::NeighbourhoodGroup::new());
+            .insert(id, crate::graph::NeighbourhoodGroup::new());
         self.containing_surfaces.insert(id, surface_id);
         self.bounds.insert(id, initial_bounds);
 

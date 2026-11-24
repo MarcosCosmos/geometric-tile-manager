@@ -1,8 +1,5 @@
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
-use crate::graph::NodeId;
-use crate::key::QueryKey;
-use markers_derive::QueryKey;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::ops::{Index, IndexMut, Not};
@@ -36,9 +33,9 @@ pub enum BoundsAlignment {
     After,
 }
 
-impl Into<Ordering> for BoundsAlignment {
-    fn into(self) -> Ordering {
-        match self {
+impl From<BoundsAlignment> for Ordering {
+    fn from(val: BoundsAlignment) -> Self {
+        match val {
             BoundsAlignment::Before
             | BoundsAlignment::PartiallyBefore
             | BoundsAlignment::Contains => Ordering::Less,
@@ -54,13 +51,13 @@ impl AxisBounds {
     pub fn new(negative: i32, positive: i32) -> Self {
         Self { negative, positive }
     }
-    pub fn len(&self) -> i32 {
+    pub fn extent(&self) -> i32 {
         assert!(self.positive >= self.negative);
         self.positive - self.negative
     }
 
     pub fn center(&self) -> f32 {
-        self.negative as f32 + (self.len() as f32 / 2f32)
+        self.negative as f32 + (self.extent() as f32 / 2f32)
     }
 
     pub fn alignment(&self, other: &AxisBounds) -> BoundsAlignment {
@@ -94,7 +91,7 @@ impl AxisBounds {
     /// splits the target bounds into two portions:
     /// - the first is the portion of the bounds that lie inside these bounds, and the second is a delta that when added first results in the original.
     pub fn clamp(self, other: &AxisBounds) -> AxisBounds {
-        assert_ne!(self.alignment(&other), BoundsAlignment::Contains);
+        assert_ne!(self.alignment(other), BoundsAlignment::Contains);
         AxisBounds {
             negative: self.negative.clamp(other.negative, other.positive),
             positive: self.positive.clamp(other.negative, other.positive),

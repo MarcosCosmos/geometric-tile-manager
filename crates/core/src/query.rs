@@ -1,4 +1,3 @@
-use crate::caret::Caret;
 use crate::geometry::{AreaBounds, LineBounds};
 use crate::graph::{Graph, NodeId};
 use crate::key::QueryKey;

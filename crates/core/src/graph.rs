@@ -1,5 +1,5 @@
 use crate::area::{Area, AreaQuery};
-use crate::caret::{Caret, CaretQuery};
+use crate::caret::Caret;
 use crate::command::transform::SegmentedArea;
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu};
@@ -12,17 +12,16 @@ use crate::line::{Line, LineQuery};
 use crate::neighbours::{NeighbourSurfaces, NeighbourTiles, NeighbourhoodQuery};
 use crate::node::{NodeNotFound, NodeQuery};
 use crate::query::{
-    ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GraphQuery, Query,
+    ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, Query,
 };
-use itertools::{Itertools, any};
-use markers_derive::{NodeKey, QueryKey};
+use itertools::Itertools;
+use markers_derive::QueryKey;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::ops::{Deref, Index, IndexMut};
+use std::ops::{Index, IndexMut};
 use uuid::Uuid;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, QueryKey)]
@@ -34,9 +33,9 @@ impl NodeId {
     }
 }
 
-impl Into<Uuid> for NodeId {
-    fn into(self) -> Uuid {
-        self.0
+impl From<NodeId> for Uuid {
+    fn from(val: NodeId) -> Self {
+        val.0
     }
 }
 
@@ -158,8 +157,8 @@ impl Graph {
             vec![new_bounds]
         } else {
             let old_container_bounds = Query::new(self, container.area()).bounds()[container.axis];
-            let old_container_size = old_container_bounds.len();
-            let new_container_size = new_bounds.len();
+            let old_container_size = old_container_bounds.extent();
+            let new_container_size = new_bounds.extent();
             let (mut result, repairs): (Vec<AxisBounds>, Vec<AxisBounds>) = container
                 .segments
                 .iter()
@@ -178,7 +177,7 @@ impl Graph {
                 let scale = new_container_size as f64 / old_container_size as f64;
                 for segment_bounds in result.iter_mut() {
                     segment_bounds[Positive] = segment_bounds[Negative]
-                        + f64::floor(segment_bounds.len() as f64 * scale) as i32;
+                        + f64::floor(segment_bounds.extent() as f64 * scale) as i32;
                 }
             } else {
                 let portion =
@@ -188,7 +187,7 @@ impl Graph {
                 }
             };
 
-            let estimated_total: i32 = result.iter().map(|bounds| bounds.len()).sum();
+            let estimated_total: i32 = result.iter().map(|bounds| bounds.extent()).sum();
             let mut remainder = new_container_size - estimated_total;
             let signum = remainder.signum();
             if remainder as usize >= container.segments.len() {
@@ -213,15 +212,15 @@ impl Graph {
                 }
             }
 
-            let mut next_origin = new_bounds[Negative];
+            let next_origin = new_bounds[Negative];
 
             for segment_bounds in result.iter_mut() {
-                let size = segment_bounds.len();
+                let size = segment_bounds.extent();
                 segment_bounds[Negative] = next_origin;
                 segment_bounds[Positive] = next_origin + size;
             }
 
-            for (segment_bounds, repair) in result.iter_mut().zip(repairs.into_iter()) {
+            for (segment_bounds, repair) in result.iter_mut().zip(repairs) {
                 segment_bounds[Negative] += repair[Negative];
                 segment_bounds[Positive] += repair[Positive];
             }
@@ -424,7 +423,7 @@ impl QueryContext<Uuid> for Graph {
     type OutKey = NodeId;
     type Error = KeyedError<Uuid, NodeNotFound>;
 
-    fn try_query(&self, key: Uuid) -> Result<Query<Self::OutKey>, Self::Error> {
+    fn try_query(&self, key: Uuid) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         let id = NodeId(key);
         if !self.bounds.contains_key(&id) {
             Err(NodeNotFound).with_context(|_| KeyedSnafu { key })
