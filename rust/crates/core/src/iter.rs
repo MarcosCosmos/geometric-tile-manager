@@ -6,7 +6,7 @@ use crate::query::{GraphQuery, Navigation, Query};
 use std::iter::{Chain, Once};
 use std::ops::{Deref, DerefMut};
 
-pub trait IterativeQueryNavigation: Navigation + Ord {
+pub trait IterativeQueryNavigation: GraphQuery + Navigation + Ord {
     fn into_next(self, direction: Self::Direction) -> Option<Self>;
 
     fn into_iter(self, direction: Self::Direction) -> NavIter<Self>
@@ -18,7 +18,7 @@ pub trait IterativeQueryNavigation: Navigation + Ord {
 }
 impl<'a, T> IterativeQueryNavigation for T
 where
-    T: GraphQuery + Navigation,
+    T: GraphQuery + Navigation + Ord,
 {
     fn into_next(mut self, direction: Self::Direction) -> Option<Self> {
         *self = self.peek(direction)?;
@@ -74,7 +74,7 @@ where
 #[derive(Copy, Clone, Debug)]
 pub struct KeyIter<'a, K, Iter>
 where
-    K: QueryKey<NodeKey = NodeId>,
+    K: QueryKey,
     Iter: Iterator<Item = &'a K>,
 {
     context: &'a Graph,
@@ -83,7 +83,7 @@ where
 
 impl<'a, K, Iter> KeyIter<'a, K, Iter>
 where
-    K: QueryKey<NodeKey = NodeId>,
+    K: QueryKey,
     Iter: Iterator<Item = &'a K>,
 {
     pub fn new(context: &'a Graph, inner: Iter) -> Self {
@@ -93,7 +93,7 @@ where
 
 impl<'a, K, Iter> Iterator for KeyIter<'a, K, Iter>
 where
-    K: QueryKey<NodeKey = NodeId>,
+    K: QueryKey,
     Iter: Iterator<Item = &'a K>,
 {
     type Item = Query<'a, K>;
@@ -107,7 +107,7 @@ where
 
 impl<'a, K, Iter> DoubleEndedIterator for KeyIter<'a, K, Iter>
 where
-    K: QueryKey<NodeKey = NodeId>,
+    K: QueryKey,
     Iter: DoubleEndedIterator<Item = &'a K>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {

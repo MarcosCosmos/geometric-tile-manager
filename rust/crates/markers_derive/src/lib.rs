@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{DeriveInput, Expr, parse_macro_input};
+use syn::{DeriveInput, parse_macro_input};
 
 #[proc_macro_derive(NodeKey)]
 pub fn node_key_derive(input: TokenStream) -> TokenStream {
@@ -22,23 +22,23 @@ pub fn query_key_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let attribute = input
-        .attrs
-        .iter()
-        .filter(|a| a.path().segments.len() == 1 && a.path().segments[0].ident == "node")
-        .nth(0);
-
-    let node_key = if let Some(attr) = attribute {
-        let result: Expr = attr
-            .parse_args()
-            .expect("Expected an expression identifying the node key type.");
-        quote!(#result)
-    } else {
-        quote!(Node)
-    };
+    // let attribute = input
+    //     .attrs
+    //     .iter()
+    //     .filter(|a| a.path().segments.len() == 1 && a.path().segments[0].ident == "node")
+    //     .nth(0);
+    // 
+    // let node_key = if let Some(attr) = attribute {
+    //     let result: Expr = attr
+    //         .parse_args()
+    //         .expect("Expected an expression identifying the node key type.");
+    //     quote!(#result)
+    // } else {
+    //     quote!(Node)
+    // };
     quote! {
         impl #impl_generics QueryKey for #name #ty_generics #where_clause {
-            type NodeKey = #node_key;
+            // type NodeKey = #node_key;
         }
     }
     .into()

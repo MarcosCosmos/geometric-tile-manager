@@ -209,29 +209,38 @@ impl ElementInformation2D for Query<'_, Transform> {
 
 impl TransformInformation for Query<'_, Transform> {
     fn details(&self) -> Option<TransformDetails> {
-        let area = Query::new(self.context, self.target);
+        let target = Query::new(self.context, self.target);
         let surface_area =
-            Query::<Area>::from(area.into_corner(NORTH_WEST).into_containing_surface());
-        let area = Query::new(self.context, self.target);
+            Query::<Area>::from(target.into_corner(NORTH_WEST).into_containing_surface());
 
-        let maybe_negative = area
-            .into_side(Cardinal::new(self.axis, Negative))
-            .into_opposing()
-            .map(|start| {
-                surface_area
-                    .with_constraint(*start)
-                    .into_segmented(start.side)
-            });
+        let initial_bounds = target.bounds()[self.axis];
+
+        let maybe_negative = if self.intended_bounds[Negative] == initial_bounds[Negative] {
+            None
+        } else {
+            target
+                .into_side(Cardinal::new(self.axis, Negative))
+                .into_opposing()
+                .map(|start| {
+                    surface_area
+                        .with_constraint(*start)
+                        .into_segmented(start.side)
+                })
+        };
 
         // we don't need to force the opposing line here
-        let maybe_positive = area
-            .into_side(Cardinal::new(self.axis, Positive))
-            .into_opposing()
-            .map(|start| {
-                surface_area
-                    .with_constraint(*start)
-                    .into_segmented(start.side)
-            });
+        let maybe_positive = if self.intended_bounds[Positive] != initial_bounds[Positive] {
+            None
+        } else {
+            target
+                .into_side(Cardinal::new(self.axis, Positive))
+                .into_opposing()
+                .map(|start| {
+                    surface_area
+                        .with_constraint(*start)
+                        .into_segmented(start.side)
+                })
+        };
 
         match (maybe_negative, maybe_positive) {
             (Some(negative), None) => Some(TransformDetails::Negative(negative)),
@@ -299,7 +308,7 @@ impl<K, B, T> QueryContext<Transform<K, B>> for T
 where
     K: QueryKey,
     B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
-    T: QueryContext<K, OutKey: QueryKey<NodeKey = NodeId>>,
+    T: QueryContext<K, OutKey: QueryKey>,
     for<'a> Query<'a, T::OutKey>: Into<Query<'a, Area>>,
     for<'a> Query<'a, Transform<Area, B>>: TryInto<Query<'a, Transform>>,
     for<'a> QueryError<K, T::Error, TransformError>: From<T::Error>
@@ -312,8 +321,7 @@ where
     fn try_query(&self, key: Transform<K, B>) -> Result<Query<Self::OutKey>, Self::Error> {
         (|| {
             let area: Area = *Into::<Query<Area>>::into(self.try_query(key.target)?);
-            Ok(self
-                .query(Transform::new(area, key.axis, key.intended_bounds))
+            Ok(Query::new(self.as_ref(), Transform::new(area, key.axis, key.intended_bounds))
                 .try_into()?
                 .into_normalized()
                 .into_validated()?)

@@ -1,10 +1,9 @@
 use crate::area::{Area, AreaQuery};
 use crate::caret::{Caret, CaretQuery};
-use crate::context::RawQueryContext;
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{AreaBounds, Cardinal, NORTH_EAST, NORTH_WEST, SOUTH_EAST, SOUTH_WEST};
 use crate::graph::NodeId;
-use crate::key::{NodeKey, QueryKey};
+use crate::key::{QueryKey};
 use crate::line::Line;
 use crate::query::{ElementInformation, ElementInformation2D, ElementKind, Query};
 use crate::query_impl;

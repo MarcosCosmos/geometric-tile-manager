@@ -1,7 +1,6 @@
 use crate::caret::Caret;
 use crate::command::transform::SegmentedArea;
 use crate::context::QueryContext;
-use crate::context::RawQueryContext;
 use crate::error::{KeyedError, KeyedSnafu, QueryError, ValidationError};
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
@@ -11,16 +10,14 @@ use crate::geometry::{
 };
 use crate::graph::NodeId;
 use crate::iter::IterativeQueryNavigation;
-use crate::key::NodeKey;
 use crate::key::{QueryKey, query_impl};
 use crate::line::{Line, LineQuery};
-use crate::node::{NodeNotFound, NodeQuery};
+use crate::node::{NodeQuery};
 use crate::query::{
     ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GroupInformation,
     Query,
 };
 use markers_derive::{QueryKey, ValidationError};
-use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use std::cmp::Ordering;
@@ -35,7 +32,7 @@ use std::ops::{Index, IndexMut};
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
 pub struct Area<Node = NodeId>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     north_west: Node,
     north_east: Node,
@@ -45,7 +42,7 @@ where
 
 impl<Node> From<Node> for Area<Node>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     fn from(value: Node) -> Self {
         Area {
@@ -61,7 +58,7 @@ query_impl! { From<NodeId> for Area }
 
 impl<Node> Area<Node>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     pub fn new(north_west: Node, north_east: Node, south_west: Node, south_east: Node) -> Self {
         Self {
@@ -75,7 +72,7 @@ where
 
 impl<Node> Index<Diagonal> for Area<Node>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     type Output = Node;
 
@@ -103,7 +100,7 @@ where
 
 impl<Node> IndexMut<Diagonal> for Area<Node>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     fn index_mut(&mut self, index: Diagonal) -> &mut Self::Output {
         match index {
@@ -365,17 +362,16 @@ impl<'a> AreaQuery for Query<'a, Area> {
 impl<T, Node> QueryContext<Area<Node>> for T
 where
     T: QueryContext<Node, OutKey = NodeId>,
-    Node: NodeKey,
+    Node: QueryKey,
     QueryError<Node, <T as QueryContext<Node>>::Error, AreaProblem>: From<T::Error>,
 {
     type OutKey = Area;
 
     type Error = KeyedError<Area<Node>, QueryError<Node, T::Error, AreaProblem>>;
 
-    fn try_query(&self, key: Area<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
+    fn try_query(&self, key: Area<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         (|| {
-            Ok(self
-                .query(Area {
+            Ok(Query::new(self.as_ref(), Area {
                     north_west: *self.try_query(key.north_west)?,
                     north_east: *self.try_query(key.north_east)?,
                     south_east: *self.try_query(key.south_east)?,

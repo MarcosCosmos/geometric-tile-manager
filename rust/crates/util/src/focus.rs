@@ -1,13 +1,11 @@
-use geowm::caret::{Caret, CaretNavigationMut};
-use geowm::geometry::{Axis, Cardinal, Sign};
-use geowm::graph::{Graph, NodeId};
-use geowm::neighbours::{NeighbourSurfaces, NeighbourTiles, Neighbours};
-use geowm::query::{
-    ElementInformation, ElementInformation1D, ElementKind, Navigation, NavigationMut, Query,
-};
+use geowm_core::context::QueryContext;
+use geowm_core::caret::{Caret, CaretNavigationMut};
+use geowm_core::geometry::{Axis, Cardinal, Sign, Sign::{*}};
+use geowm_core::graph::{Graph, NodeId};
+use geowm_core::neighbours::{NeighbourSurfaces, NeighbourTiles, Neighbours};
+use geowm_core::query::{ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, Navigation, NavigationMut, Query};
 use std::ops::Deref;
 use uuid::Uuid;
-
 pub struct FocusState {
     target: Option<Caret>,
     negative_history: Vec<Caret>,
@@ -83,18 +81,17 @@ impl<'a, 'b> FocusNavigator<'a, 'b> {
 
     fn nearest_by_centers<T>(&self, candidates: T, axis: Axis) -> Option<NodeId>
     where
-        T: Iterator<Item = Query<Caret>>,
+        T: Iterator<Item = Query<'a, NodeId>>,
     {
         let center = Query::new(self.graph, **self).bounds().axis_bounds.center();
         Some(
-            candidates
+            *candidates
                 .min_by(|a, b| {
                     f32::total_cmp(
-                        &f32::abs(a.bounds().axis_bounds.center() - center),
-                        &f32::abs(b.bounds().axis_bounds.center() - center),
+                        &f32::abs(a.bounds()[axis].center() - center),
+                        &f32::abs(b.bounds()[axis].center() - center),
                     )
-                })?
-                .id,
+                })?,
         )
     }
 }
@@ -117,7 +114,7 @@ impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
                 ElementKind::Tile => {
                     let immediate = Query::<NeighbourTiles>::from(current);
                     if let Some(node) = immediate.into_iter().next()
-                        && &&node.kind() == ElementKind::Surface
+                        && node.kind() == ElementKind::Surface
                     {
                         Query::<NeighbourSurfaces>::from(current).into()
                     } else {
@@ -131,9 +128,8 @@ impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
                     if let Some(next_surface_id) =
                         self.nearest_by_centers(prelims.into_iter(), direction.axis) =>
                 {
-                    let distant = self
-                        .graph
-                        .query(NeighbourTiles(Caret::new(next_surface_id, direction)));
+                    let distant = Query::new(self
+                        .graph, NeighbourTiles(Caret::new(next_surface_id, direction)));
                     if distant
                         .into_iter()
                         .any(|node| node.kind() == ElementKind::Tile)
@@ -151,7 +147,7 @@ impl<'a, 'b> Navigation for FocusNavigator<'_, '_> {
             && let Some(&previous) = self
                 .history(direction.sign)
                 .last()
-                .filter(|c| candidates.contains(&c.id))
+                .filter(|c| candidates.into_iter().any(|id| *id == c.id))
         {
             Some(previous)
         } else if direction.axis != self.side.axis

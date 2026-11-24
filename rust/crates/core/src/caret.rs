@@ -1,8 +1,8 @@
-use crate::context::{QueryContext, RawQueryContext};
+use crate::context::{QueryContext};
 use crate::error::KeyedError;
 use crate::geometry::{Cardinal, LineBounds, Sign};
 use crate::graph::NodeId;
-use crate::key::{NodeKey, QueryKey};
+use crate::key::QueryKey;
 use crate::line::Line;
 use crate::neighbours::{NeighbourSurfaces, NeighbourTiles, Neighbours};
 use crate::node::{NodeNotFound, NodeQuery, TooManyNodesError};
@@ -23,7 +23,7 @@ use std::ops::Deref;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
 pub struct Caret<Node = NodeId>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     pub id: Node,
     pub side: Cardinal,
@@ -31,7 +31,7 @@ where
 
 impl<Node> Caret<Node>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     pub fn new(id: Node, side: Cardinal) -> Self {
         Self { id, side }
@@ -46,7 +46,7 @@ impl TryFrom<Line> for Caret {
 }
 impl<T> From<T> for Caret
 where
-    T: QueryKey<NodeKey = NodeId> + Deref<Target = Caret>,
+    T: QueryKey + Deref<Target = Caret>,
 {
     fn from(value: T) -> Self {
         *value
@@ -55,7 +55,7 @@ where
 
 impl<Node> From<NeighbourTiles<Node>> for Caret<Node>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     fn from(value: NeighbourTiles<Node>) -> Self {
         value.0
@@ -64,7 +64,7 @@ where
 
 impl<Node> From<NeighbourSurfaces<Node>> for Caret<Node>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     fn from(value: NeighbourSurfaces<Node>) -> Self {
         value.0
@@ -73,7 +73,7 @@ where
 
 impl<Node> From<Neighbours<Node>> for Caret<Node>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     fn from(value: Neighbours<Node>) -> Self {
         match value {
@@ -174,14 +174,13 @@ impl<T: ?Sized> CaretIterExt for T where T: Iterator<Item: Deref<Target = Caret>
 
 impl<T, Node> QueryContext<Caret<Node>> for T
 where
-    T: RawQueryContext
-        + QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
-    Node: NodeKey,
+    T: QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    Node: QueryKey,
 {
     type OutKey = Caret;
     type Error = KeyedError<Node, NodeNotFound>;
 
     fn try_query(&self, key: Caret<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
-        Ok(self.query(Caret::new(*self.try_query(key.id)?, key.side)))
+        Ok(Query::new(self.as_ref(), Caret::new(*self.try_query(key.id)?, key.side)))
     }
 }

@@ -1,18 +1,13 @@
-use crate::caret::Caret;
 use crate::context::QueryContext;
-use crate::geometry::AreaBounds;
-use crate::graph::NodeId;
-use crate::key::{NodeKey, QueryKey};
-use crate::line::Line;
+use crate::key::QueryKey;
 use markers_derive::Command;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::error::Error;
 use std::fmt::Debug;
 
 mod add_surface;
 pub mod add_tile;
-pub mod delete;
 pub mod transform;
 
 pub trait Command: Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned {}
@@ -25,32 +20,6 @@ pub trait Command: Copy + Clone + Debug + Eq + PartialEq + Serialize + Deseriali
 /// A good example of the importance of hinting is deleting a tile:
 /// - If there is a guide selection/line that doesn't need to be expanded to be usable, it should usually be preferred, as expanding carries a risk of pancaking another tile into invisibility.
 // pub enum Guide<T>()
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct DeleteNode<K = Caret>
-where
-    K: QueryKey + Into<Caret<K::NodeKey>> + Into<Line<K::NodeKey>>,
-{
-    pub key: K,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct MoveLine<K = Line>
-where
-    K: QueryKey + Into<Line<K::NodeKey>>,
-{
-    pub key: K,
-    pub new_location: i32,
-}
-
-impl<K> MoveLine<K>
-where
-    K: QueryKey + Into<Line<K::NodeKey>>,
-{
-    pub fn new(key: K, new_location: i32) -> Self {
-        Self { key, new_location }
-    }
-}
 
 pub trait RawCommandExecutor<Com>
 where

@@ -8,16 +8,16 @@ use uuid::Uuid;
 pub trait QueryKey:
     Sized + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned + 'static
 {
-    type NodeKey: NodeKey;
+    // type NodeKey: NodeKey;
 }
 
-impl NodeKey for Uuid {}
+// impl NodeKey for Uuid {}
 
 impl QueryKey for Uuid {
-    type NodeKey = Self;
+    // type NodeKey = Self;
 }
-
-pub trait NodeKey: QueryKey {}
+// 
+// pub trait NodeKey: QueryKey {}
 
 #[macro_export]
 macro_rules! query_impl {
@@ -34,7 +34,7 @@ macro_rules! query_impl {
         {
             fn from(value: Query<'a, $source>) -> Self {
                 use std::ops::Deref;
-                value.context.query($dest$(::<$($dest_generics),+>)?::from(*(value.deref())))
+                Query::new(value.context, $dest$(::<$($dest_generics),+>)?::from(*(value.deref())))
             }
         }
     };
@@ -43,7 +43,7 @@ macro_rules! query_impl {
         {
             type Error = <$dest as TryFrom<$source>>::Error;
             fn try_from(value: Query<'a, $source>) -> Result<Self, Self::Error> {
-                $dest$(::<$($dest_generics),+>)?::try_from(*value).map(|dest| value.context.query(dest))
+                $dest$(::<$($dest_generics),+>)?::try_from(*value).map(|dest| Query::new(value.context, dest))
             }
         }
     };

@@ -1,19 +1,18 @@
+use crate::key::QueryKey;
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu};
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{EAST, NORTH, SOUTH, WEST};
 use crate::graph::{Graph, NodeId};
-use crate::key::NodeKey;
-use crate::key::QueryKey;
 use crate::neighbours::NeighbourTiles;
 use crate::node::{NodeNotFound, NodeQuery};
 use crate::query::{ElementInformation, ElementKind, Query};
-use markers_derive::NodeKey;
+use markers_derive::{NodeKey, QueryKey};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, NodeKey)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, QueryKey)]
 pub struct Point {
     pub x: i32,
     pub y: i32,

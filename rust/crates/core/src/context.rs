@@ -1,31 +1,12 @@
-use crate::area::AreaProblem;
-use crate::error::{KeyedError, QueryError};
-use crate::graph::{Graph, NodeId};
-use crate::key::QueryKey;
-use crate::node::NodeNotFound;
-use crate::query::{GraphQuery, Query};
 use std::error::Error;
-
-pub trait RawQueryContext {
-    fn query<Key>(&self, key: Key) -> Query<Key>
-    where
-        Key: QueryKey<NodeKey = NodeId>,
-        for<'a> Query<'a, Key>: GraphQuery;
-}
-
-impl RawQueryContext for Graph {
-    fn query<Key>(&self, key: Key) -> Query<Key>
-    where
-        Key: QueryKey<NodeKey = NodeId>,
-    {
-        Query::new(self, key)
-    }
-}
+use crate::graph::Graph;
+use crate::key::QueryKey;
+use crate::query::Query;
 
 pub trait QueryContext<K>
 where
     K: QueryKey,
-    Self: RawQueryContext,
+    Self: AsRef<Graph>,
 {
     type OutKey: QueryKey;
     type Error: Error + 'static;

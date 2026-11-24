@@ -7,7 +7,6 @@ use crate::geometry::{
     AreaBounds, Axis, Axis::*, AxisBounds, BoundsAlignment, Cardinal, Sign, Sign::*,
 };
 use crate::iter::IterativeQueryNavigation;
-use crate::key::NodeKey;
 use crate::key::QueryKey;
 use crate::line::{Line, LineQuery};
 use crate::neighbours::{NeighbourSurfaces, NeighbourTiles, NeighbourhoodQuery};
@@ -16,7 +15,7 @@ use crate::query::{
     ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GraphQuery, Query,
 };
 use itertools::{Itertools, any};
-use markers_derive::NodeKey;
+use markers_derive::{NodeKey, QueryKey};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use std::cmp::Ordering;
@@ -26,7 +25,7 @@ use std::hash::Hash;
 use std::ops::{Deref, Index, IndexMut};
 use uuid::Uuid;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, NodeKey)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, QueryKey)]
 pub struct NodeId(Uuid);
 
 impl NodeId {
@@ -41,7 +40,7 @@ impl Into<Uuid> for NodeId {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct NeighbourhoodGroup {
     north: Vec<NodeId>,
     south: Vec<NodeId>,
@@ -53,8 +52,8 @@ pub(crate) struct NeighbourhoodGroup {
 /// - There are inter-surface and intra-surface neighbourhoods which have different meanings.
 /// - Gaps may be present either on the inside of a surface or between tiles; in htis sense gaps would potentially alter poorly written algorithms
 /// - Storing tiles seperately from neighboy
-#[derive(Clone, Debug, Default)]
-pub(crate) struct Graph {
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Graph {
     pub(crate) bounds: HashMap<NodeId, AreaBounds>,
     pub(crate) containing_surfaces: HashMap<NodeId, NodeId>,
     /// Note: each surface has an entry in its own interior neighbourhood.
@@ -412,6 +411,12 @@ impl NeighbourIndexMut<NeighbourSurfaces> for Graph {
     fn neighbours_mut(&mut self, index: NeighbourSurfaces) -> &mut Vec<NodeId> {
         let caret: Caret = index.into();
         &mut self.surface_neighbourhoods.get_mut(&caret.id).unwrap()[caret.side]
+    }
+}
+
+impl AsRef<Graph> for Graph {
+    fn as_ref(&self) -> &Graph {
+        self
     }
 }
 

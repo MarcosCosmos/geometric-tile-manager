@@ -1,12 +1,11 @@
 use crate::area::{Area, AreaQuery};
 use crate::caret::{Caret, CaretQuery};
 use crate::context::QueryContext;
-use crate::context::RawQueryContext;
 use crate::error::{KeyedError, KeyedSnafu, QueryError, ValidationError};
 use crate::geometry::{Cardinal, LineBounds, Sign, Sign::*};
 use crate::graph::NodeId;
 use crate::iter::IterativeQueryNavigation;
-use crate::key::{NodeKey, QueryKey};
+use crate::key::{QueryKey};
 use crate::node::{NodeNotFound, NodeQuery};
 use crate::query::{
     ElementInformation, ElementInformation1D, ElementKind, GroupInformation, Navigation,
@@ -25,7 +24,7 @@ use std::ops::{Deref, Index, IndexMut};
 // This line may or may not be fully "connected" (without cutting through the interior of any tiles)
 pub struct Line<Node = NodeId>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     negative_id: Node,
     positive_id: Node,
@@ -34,7 +33,7 @@ where
 
 impl<Node> Line<Node>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     pub fn new(negative_id: Node, positive_id: Node, side: Cardinal) -> Self {
         Self {
@@ -47,7 +46,7 @@ where
 
 impl<Node> Index<Sign> for Line<Node>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     type Output = Node;
 
@@ -61,7 +60,7 @@ where
 
 impl<Node> IndexMut<Sign> for Line<Node>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     fn index_mut(&mut self, index: Sign) -> &mut Self::Output {
         match index {
@@ -73,7 +72,7 @@ where
 
 impl<Node> From<Caret<Node>> for Line<Node>
 where
-    Node: NodeKey,
+    Node: QueryKey,
 {
     fn from(value: Caret<Node>) -> Self {
         Self::new(value.id, value.id, value.side)
@@ -143,7 +142,7 @@ impl<'a> GroupInformation for Query<'a, Line> {
 
 // todo later: implement nested key swapping reverse engineer the input that corresponded to each error.
 #[derive(Debug, Snafu, ValidationError)]
-enum LineProblem {
+pub enum LineProblem {
     /// A Line cannot span multiple surfaces
     MultipleSurfaces,
     /// The ends of the line are arranged in the wrong order
@@ -346,7 +345,7 @@ impl Navigation for Query<'_, Line> {
 impl<T, Node> QueryContext<Line<Node>> for T
 where
     T: QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
-    Node: QueryKey + NodeKey,
+    Node: QueryKey,
     QueryError<Node, T::Error, LineProblem>: From<T::Error>,
 {
     type OutKey = Line;
@@ -355,8 +354,7 @@ where
 
     fn try_query(&self, key: Line<Node>) -> Result<Query<Self::OutKey>, Self::Error> {
         (|| {
-            Ok(self
-                .query(Line::new(
+            Ok(Query::new(self.as_ref(), Line::new(
                     *self.try_query(key[Negative])?,
                     *self.try_query(key[Positive])?,
                     key.side,

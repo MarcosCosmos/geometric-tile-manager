@@ -5,6 +5,6 @@ edition = "2024"
 
 [dependencies]
 uuid = { version = "1.28.0", features = ["v4", "serde"] }
-geowm = {
+geowm-core = {
     path = "../core"
 }

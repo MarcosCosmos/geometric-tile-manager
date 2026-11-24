@@ -198,7 +198,7 @@ impl<K, B, T> QueryContext<AddTile<K, B>> for T
 where
     K: QueryKey,
     B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
-    T: QueryContext<K, OutKey: QueryKey<NodeKey = NodeId>>,
+    T: QueryContext<K>,
     for<'a> Query<'a, T::OutKey>: Into<Query<'a, Line>>,
     for<'a> Query<'a, AddTile<Line, B>>: TryInto<Query<'a, AddTile>>,
     for<'a> QueryError<K, T::Error, TransformError>:
@@ -211,8 +211,7 @@ where
     fn try_query(&self, key: AddTile<K, B>) -> Result<Query<Self::OutKey>, Self::Error> {
         (|| {
             let line: Line = *Into::<Query<Line>>::into(self.try_query(key.destination)?);
-            Ok(self
-                .query(AddTile::new(line, key.intended_bounds))
+            Ok(Query::new(self.as_ref(), AddTile::new(line, key.intended_bounds))
                 .try_into()?
                 .into_normalized()
                 .into_validated()?)

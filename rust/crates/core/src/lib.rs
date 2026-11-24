@@ -3,7 +3,7 @@ extern crate core;
 pub mod area;
 pub mod caret;
 pub mod command;
-mod context;
+pub mod context;
 pub mod error;
 pub mod geometry;
 pub mod graph;

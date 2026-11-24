@@ -284,8 +284,8 @@ pub const WEST: Cardinal = Cardinal {
 #[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 /// Usually associated with a corner of a box
 pub struct Diagonal {
-    horizontal: Sign,
-    vertical: Sign,
+    pub horizontal: Sign,
+    pub vertical: Sign,
 }
 
 impl Not for Diagonal {

@@ -37,7 +37,7 @@ pub trait GroupQuery: GroupInformation + TryInto<Self::NodeQuery> {
     type NodeQuery;
 }
 
-pub trait Navigation: Deref<Target: QueryKey> + Sized + Ord {
+pub trait Navigation: Deref<Target: QueryKey> + Sized {
     type Direction: Copy + Not<Output = Self::Direction>;
 
     fn peek(&self, direction: Self::Direction) -> Option<Self::Target>;
