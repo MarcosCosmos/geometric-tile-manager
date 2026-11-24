@@ -167,7 +167,7 @@ where
 
 impl<T, Node> QueryContext<NeighbourTiles<Node>> for T
 where
-    T: QueryContext<Node, OutKey = NodeId, Error= KeyedError<Node, NodeNotFound>>,
+    T: QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
     Node: NodeKey,
 {
     type OutKey = NeighbourTiles;
@@ -184,7 +184,7 @@ where
 
 impl<T, Node> QueryContext<NeighbourSurfaces<Node>> for T
 where
-    T: QueryContext<Node, OutKey = NodeId, Error= KeyedError<Node, NodeNotFound>>,
+    T: QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
     Node: NodeKey,
 {
     type OutKey = NeighbourSurfaces;

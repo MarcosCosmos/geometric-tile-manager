@@ -1,11 +1,11 @@
-use crate::key::QueryKey;
-use crate::graph::NodeId;
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
+use crate::graph::NodeId;
+use crate::key::QueryKey;
+use markers_derive::QueryKey;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::ops::{Index, IndexMut, Not};
-use markers_derive::QueryKey;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Axis {
@@ -166,7 +166,7 @@ pub struct LineBounds {
 impl From<LineBounds> for AreaBounds {
     fn from(value: LineBounds) -> Self {
         let narrow_bounds = AxisBounds::new(value.side_location, value.side_location);
-        match value.side.axis { 
+        match value.side.axis {
             Horizontal => AreaBounds::new(value.axis_bounds, narrow_bounds),
             Vertical => AreaBounds::new(narrow_bounds, value.axis_bounds),
         }

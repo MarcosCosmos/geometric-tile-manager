@@ -175,7 +175,7 @@ impl<T: ?Sized> CaretIterExt for T where T: Iterator<Item: Deref<Target = Caret>
 impl<T, Node> QueryContext<Caret<Node>> for T
 where
     T: RawQueryContext
-        + QueryContext<Node, OutKey = NodeId, Error= KeyedError<Node, NodeNotFound>>,
+        + QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
     Node: NodeKey,
 {
     type OutKey = Caret;
