@@ -2,6 +2,9 @@ use crate::graph::{Graph, NodeId};
 use crate::key::QueryKey;
 use crate::query::{GraphQuery, Query};
 use std::error::Error;
+use crate::area::AreaProblem;
+use crate::error::{KeyedError, QueryError};
+use crate::node::NodeNotFound;
 
 pub trait RawQueryContext {
     fn query<Key>(&self, key: Key) -> Query<Key>

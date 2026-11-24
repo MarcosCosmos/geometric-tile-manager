@@ -1,36 +1,45 @@
-use std::fmt::{write, Display, Formatter};
 use crate::area::{Area, AreaQuery};
-use crate::command::Command;
-use crate::error::ValidationError;
+use crate::command::{Command, RawCommandExecutor};
+use crate::command::transform::TransformError::InvalidBounds;
+use crate::error::{KeyedError, KeyedSnafu, QueryError, ValidationError};
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
-use crate::geometry::{AreaBounds, Axis, AxisBounds, Sign, NORTH_WEST, Cardinal, NORTH_EAST, SOUTH_EAST, SOUTH_WEST};
-use crate::key::{NodeKey, QueryKey};
+use crate::geometry::{AreaBounds, Axis, AxisBounds, Cardinal, Sign, NORTH_EAST, NORTH_WEST, SOUTH_EAST, SOUTH_WEST, WEST};
+use crate::iter::IterativeQueryNavigation;
+use crate::key::QueryKey;
 use crate::line::{Line, LineQuery};
+use crate::node::NodeQuery;
 use crate::query::{ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GraphQuery, GroupInformation, Information, Query};
 use markers_derive::{QueryKey, ValidationError};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use snafu::{ensure, Snafu};
-use std::ops::Deref;
-use crate::command::add_tile::AddTile;
-use crate::graph::NodeId;
-use crate::iter::IterativeQueryNavigation;
-use crate::node::NodeQuery;
+use snafu::{ResultExt, Snafu};
 use std::error::Error;
+use std::fmt::{Debug, Display, Formatter};
+use crate::command::add_tile::AddTile;
+use crate::context::QueryContext;
+use crate::graph::{Graph, NodeId};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey, Command)]
 #[node(K::NodeKey)]
-pub struct Transform<K=Area, B=AxisBounds>
+pub struct Transform<K = Area, B = AxisBounds>
 where
     K: QueryKey,
-    B: QueryKey,
-    for <'a> Query<'a, K>: Into<Query<'a, Area>>,
-    for <'a> Query<'a, B>: Into<Query<'a, AxisBounds>>,
-
+    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
 {
     pub target: K,
     pub axis: Axis,
-    pub new_bounds: B,
+    pub intended_bounds: B,
+}
+
+impl<K, B> Transform<K, B>
+where
+    K: QueryKey,
+    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned
+{
+    pub fn new(target: K, axis: Axis, intended_bounds: B) -> Self {
+        Self { target, axis, intended_bounds }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -156,8 +165,8 @@ impl<T> Iterator for TransformDetailIter<T> {
 }
 
 // todo: when we refactor XInformation traits into structs with derived provider traits, the existing TransformDetails will become that struct for transform queries.
-pub trait TransformInformation: Information {
-    fn details(&self) -> TransformDetails;
+pub trait TransformInformation: Information + ElementInformation2D {
+    fn details(&self) -> Option<TransformDetails>;
 }
 
 // pub trait TransformKey:
@@ -165,43 +174,48 @@ pub trait TransformInformation: Information {
 // {
 // }
 
-#[derive(Debug, Snafu, ValidationError)]
-pub enum TransformSpaceError {
+#[derive(Debug, Snafu)]
+pub enum PartialTransformErrorDetail {
     /// No adjacent area to scale
-    NothingToScale,
+    NothingToTransform,
     // Insufficient space for the requested size
     OutOfBounds,
 }
-#[derive(Debug, ValidationError)]
+
+#[derive(Debug)]
+pub struct PartialTransformError {
+    pub(crate) negative: Option<PartialTransformErrorDetail>,
+    pub(crate) positive: Option<PartialTransformErrorDetail>,
+}
+
+#[derive(Debug, Snafu, ValidationError)]
 pub enum TransformError {
+    /// The area to transform is not cleanly connected! To be transformable, all sides of the area must be a straight line of parallel tiles.
     NotConnected,
-    Space {
-        negative: Option<TransformSpaceError>,
-        positive: Option<TransformSpaceError>,
-    }
+    /// The requested bounds is malformed (the negative end lies after the positive end).
+    InvalidBounds,
+    /// No adjacent area to scale
+    InvalidDetails,
+    #[snafu(transparent)]
+    Partial { source: PartialTransformError },
 }
 
-impl Display for TransformError {
+impl Display for PartialTransformError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self {
-            TransformError::NotConnected => write!(f, "The area to transform is not cleanly connected! To be transformable, all sides of the area must be a straight line of parallel tiles."),
-            TransformError::Space { negative, positive } => {
-                if let Some(negative) = negative {
-                    writeln!(f, "Could not transform the Negative side of the area: {negative};")?
-                }
-                if let Some(positive) = positive {
-                    writeln!(f, "Could not transform the Positive side of the area: {positive};")?
-                }
-                Ok(())
-            }
+        if let Some(negative) = &self.negative {
+            writeln!(f, "Could not transform the Negative side of the area: {negative};")?
         }
+        if let Some(positive) = &self.positive {
+            writeln!(f, "Could not transform the Positive side of the area: {positive};")?
+        }
+        Ok(())
     }
 }
 
-impl Error for TransformError {
+impl Error for PartialTransformError {
 }
 
-pub trait TransformQuery: GraphQuery {
+pub trait TransformQuery: GraphQuery + TransformInformation {
     fn into_validated(self) -> Result<Self, TransformError>;
 
     /// this will vary by command, but for one thing it will generally mean that guide elements that refer to a surface will be shifted to corresponding corners
@@ -215,8 +229,14 @@ impl ElementInformation for Query<'_, Transform> {
     }
 }
 
+impl ElementInformation2D for Query<'_, Transform> {
+    fn bounds(&self) -> AreaBounds {
+        Query::new(self.context, self.target).bounds()
+    }
+}
+
 impl TransformInformation for Query<'_, Transform> {
-    fn details(&self) -> TransformDetails {
+    fn details(&self) -> Option<TransformDetails> {
         let area = Query::new(self.context, self.target);
         let surface_area = Query::<Area>::from(area.into_corner(NORTH_WEST).into_containing_surface());
         let area = Query::new(self.context, self.target);
@@ -233,10 +253,10 @@ impl TransformInformation for Query<'_, Transform> {
         });
 
         match (maybe_negative, maybe_positive) {
-            (Some(negative), None) => TransformDetails::Negative(negative),
-            (None, Some(positive)) => TransformDetails::Positive(positive),
-            (Some(negative), Some(positive)) => TransformDetails::Bidirectional(negative, positive),
-            (None, None) => panic!("Illegal transform query resulting in empty transform details. Did you forget to run validation?"),
+            (Some(negative), None) => Some(TransformDetails::Negative(negative)),
+            (None, Some(positive)) => Some(TransformDetails::Positive(positive)),
+            (Some(negative), Some(positive)) => Some(TransformDetails::Bidirectional(negative, positive)),
+            (None, None) => None,
         }
     }
 }
@@ -244,25 +264,27 @@ impl TransformInformation for Query<'_, Transform> {
 impl TransformQuery for Query<'_, Transform> {
     fn into_validated(self) -> Result<Self, TransformError> {
         let area = Query::new(self.context, self.target);
-        let initial_bounds = area.bounds()[self.axis];
         if !area.is_connected() {
             Err(TransformError::NotConnected)?
         };
+
+        let initial_bounds = self.bounds()[self.axis];
+
         let [negative, positive] = [Negative, Positive].map(|sign| {
-            if self.new_bounds[sign] != initial_bounds[sign] {
+            if self.intended_bounds[sign] != initial_bounds[sign] {
                 if let Some(opp) = area.into_side(Cardinal::new(self.axis, sign)).into_opposing() {
                     if let Some(opp_end) = opp.into_iter(sign).last() {
                         debug_assert_eq!(opp_end.side, !opp.side);
-                        if self.new_bounds[sign] < opp_end.bounds().side_location {
-                            Some(TransformSpaceError::OutOfBounds)
+                        if self.intended_bounds[sign] < opp_end.bounds().side_location {
+                            Some(PartialTransformErrorDetail::OutOfBounds)
                         } else {
                             None
                         }
                     } else {
-                        Some(TransformSpaceError::NothingToScale)
+                        Some(PartialTransformErrorDetail::NothingToTransform)
                     }
                 } else {
-                    Some(TransformSpaceError::NothingToScale)
+                    Some(PartialTransformErrorDetail::NothingToTransform)
                 }
             } else {
                 None
@@ -270,18 +292,76 @@ impl TransformQuery for Query<'_, Transform> {
         });
 
         if negative.is_some() || positive.is_some() {
-            Err(TransformError::Space { negative, positive })?;
+            Err(TransformError::Partial{ source: PartialTransformError{ negative, positive } })?;
         }
 
         Ok(self)
     }
 
     fn into_normalized(mut self) -> Self {
-        if self.kind() == ElementKind::Surface
-            && let Some(tile_line) = Query::new(self.context, **self).peek(!self.side.sign)
-        {
-            self.0 = tile_line;
-        }
         self
+    }
+}
+
+impl<K, B, T> QueryContext<Transform<K, B>> for T
+where
+    K: QueryKey,
+    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
+    T: QueryContext<K, OutKey: QueryKey<NodeKey=NodeId>>,
+    for <'a> Query<'a, T::OutKey>: Into<Query<'a, Area>>,
+    for <'a> Query<'a, Transform<Area, B>>: TryInto<Query<'a, Transform>>,
+    for <'a> QueryError<K, T::Error, TransformError>: From<T::Error> + From<<Query<'a, Transform<Area, B>> as TryInto<Query<'a, Transform>>>::Error>
+{
+    type OutKey = Transform;
+
+    type Error = KeyedError<Transform<K, B>, QueryError<K, T::Error, TransformError>>;
+
+    fn try_query(&self, key: Transform<K, B>) -> Result<Query<Self::OutKey>, Self::Error> {
+        (|| {
+            let area: Area = *Into::<Query<Area>>::into(self.try_query(key.target)?);
+            Ok(self
+                .query(Transform::new(area, key.axis, key.intended_bounds))
+                .try_into()?
+                .into_normalized()
+                .into_validated()?)
+        })()
+            .with_context(|_| KeyedSnafu { key })
+    }
+}
+
+impl RawCommandExecutor<Transform> for Graph {
+    type Response = ();
+
+    fn execute(&mut self, command: Transform) -> Self::Response {
+        if let Ok(node) = NodeId::try_from(command.target) {
+            self.transform_node(node, command.axis, command.intended_bounds, Positive);
+            return;
+        }
+        
+        self.transform_area(&Query::new(self,command.target).into_segmented(WEST), command.intended_bounds, Positive);
+
+        let details = Query::new(self, command).details().unwrap();
+        if let Some(negative_area) = details.part(Negative) {
+            let area = Query::new(self, negative_area.area());
+            let mut new_bounds = area.bounds()[command.axis];
+            new_bounds[Positive] = command.intended_bounds[Negative] - 1;
+            let side_line = *area.into_side(Cardinal::new(command.axis, Positive));
+            self.transform_area(negative_area, new_bounds, Negative);
+        }
+        if let Some(positive_area) = details.part(Negative) {
+            let area = Query::new(self, positive_area.area());
+            let mut new_bounds = area.bounds()[command.axis];
+            new_bounds[Positive] = command.intended_bounds[Positive] + 1;
+            let side_line = *area.into_side(Cardinal::new(command.axis, Negative));
+            self.transform_area(positive_area, new_bounds, Positive);
+        }
+
+        let cross_neg = *Query::new(self, details.area())
+            .into_side(Cardinal::new(!command.axis, Negative));
+
+        let cross_pos = *Query::new(self, details.area())
+            .into_side(Cardinal::new(!command.axis, Positive));
+        self.update_connections(cross_neg);
+        self.update_connections(cross_pos);
     }
 }

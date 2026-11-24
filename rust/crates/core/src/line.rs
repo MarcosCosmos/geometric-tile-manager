@@ -345,11 +345,11 @@ impl Navigation for Query<'_, Line> {
 
 impl<T, Node> QueryContext<Line<Node>> for T
 where
-    T: QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    T: QueryContext<Node, OutKey = NodeId, Error=KeyedError<Node, NodeNotFound>>,
     Node: QueryKey + NodeKey,
     QueryError<Node, T::Error, LineProblem>: From<T::Error>,
 {
-    type OutKey = Line<NodeId>;
+    type OutKey = Line;
 
     type Error = KeyedError<Line<Node>, QueryError<Node, T::Error, LineProblem>>;
 

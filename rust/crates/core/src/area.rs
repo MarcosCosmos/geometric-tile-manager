@@ -26,6 +26,7 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::ops::{Index, IndexMut};
+use serde::de::Error;
 
 /// Generally dividers will be clean lines that don't intersect any tiles,
 /// but the start or end may or may not result in cutting through some tiles
@@ -363,9 +364,9 @@ impl<'a> AreaQuery for Query<'a, Area> {
 
 impl<T, Node> QueryContext<Area<Node>> for T
 where
-    T: QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    T: QueryContext<Node, OutKey = NodeId>,
     Node: NodeKey,
-    QueryError<Node, T::Error, AreaProblem>: From<T::Error>,
+    QueryError<Node, <T as QueryContext<Node>>::Error, AreaProblem>: From<T::Error>
 {
     type OutKey = Area;
 

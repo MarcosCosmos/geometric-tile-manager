@@ -19,8 +19,7 @@ pub enum Sign {
     Positive,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, QueryKey)]
-#[node(NodeId)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct AxisBounds {
     negative: i32,
     positive: i32,
@@ -162,6 +161,16 @@ pub struct LineBounds {
     pub side: Cardinal,
     pub axis_bounds: AxisBounds,
     pub side_location: i32,
+}
+
+impl From<LineBounds> for AreaBounds {
+    fn from(value: LineBounds) -> Self {
+        let narrow_bounds = AxisBounds::new(value.side_location, value.side_location);
+        match value.side.axis { 
+            Horizontal => AreaBounds::new(value.axis_bounds, narrow_bounds),
+            Vertical => AreaBounds::new(narrow_bounds, value.axis_bounds),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

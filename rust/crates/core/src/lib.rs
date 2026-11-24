@@ -1,3 +1,5 @@
+extern crate core;
+
 pub mod area;
 pub mod caret;
 pub mod command;
