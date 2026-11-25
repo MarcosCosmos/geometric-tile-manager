@@ -292,6 +292,7 @@ impl TransformQuery for Query<'_, Transform> {
         for sign in [Negative, Positive] {
             if self.intended_bounds[sign] != initial_bounds[sign] {
                 let direction = Cardinal::new(self.axis, sign);
+                // todo: this can probably be improved by outscanning in a more complex way but for now it's not that important.
                 if let Some(updated_side) = target.into_side(direction).into_opposable() {
                     target = target.with_constraint(*updated_side);
                 }
@@ -318,9 +319,9 @@ where
 
     type Error = KeyedError<Transform<K, B>, QueryError<K, T::Error, TransformError>>;
 
-    fn try_query(&self, key: Transform<K, B>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+    fn resolve(&self, key: Transform<K, B>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         (|| {
-            let area: Area = *Into::<Query<Area>>::into(self.try_query(key.target)?);
+            let area: Area = *Into::<Query<Area>>::into(self.resolve(key.target)?);
             Ok(Query::new(
                 self.as_ref(),
                 Transform::new(area, key.axis, key.intended_bounds),

@@ -207,9 +207,9 @@ where
 
     type Error = KeyedError<AddTile<K, B>, QueryError<K, T::Error, TransformError>>;
 
-    fn try_query(&self, key: AddTile<K, B>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+    fn resolve(&self, key: AddTile<K, B>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         (|| {
-            let line: Line = *Into::<Query<Line>>::into(self.try_query(key.destination)?);
+            let line: Line = *Into::<Query<Line>>::into(self.resolve(key.destination)?);
             Ok(
                 Query::new(self.as_ref(), AddTile::new(line, key.intended_bounds))
                     .try_into()?

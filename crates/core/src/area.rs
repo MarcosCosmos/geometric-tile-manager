@@ -369,15 +369,15 @@ where
 
     type Error = KeyedError<Area<Node>, QueryError<Node, T::Error, AreaProblem>>;
 
-    fn try_query(&self, key: Area<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+    fn resolve(&self, key: Area<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         (|| {
             Ok(Query::new(
                 self.as_ref(),
                 Area {
-                    north_west: *self.try_query(key.north_west)?,
-                    north_east: *self.try_query(key.north_east)?,
-                    south_east: *self.try_query(key.south_east)?,
-                    south_west: *self.try_query(key.south_west)?,
+                    north_west: *self.resolve(key.north_west)?,
+                    north_east: *self.resolve(key.north_east)?,
+                    south_east: *self.resolve(key.south_east)?,
+                    south_west: *self.resolve(key.south_west)?,
                 },
             )
             .into_validated()?)

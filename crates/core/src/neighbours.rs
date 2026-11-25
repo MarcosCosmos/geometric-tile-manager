@@ -2,7 +2,7 @@ use crate::caret::Caret;
 use crate::context::QueryContext;
 use crate::error::KeyedError;
 use crate::graph::NodeId;
-use crate::iter::KeyIter;
+use crate::iter::QueryIter;
 use crate::key::{QueryKey, query_impl};
 use crate::node::{NodeNotFound, NodeQuery};
 use crate::query::{ElementInformation, ElementKind, GraphQuery, Query};
@@ -144,10 +144,10 @@ where
     T: QueryKey,
 {
     type Item = Query<'a, NodeId>;
-    type IntoIter = KeyIter<'a, NodeId, std::slice::Iter<'a, NodeId>>;
+    type IntoIter = QueryIter<'a, NodeId, std::slice::Iter<'a, NodeId>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        KeyIter::new(self.context, self.items().iter())
+        QueryIter::new(self.context, self.items().iter())
     }
 }
 
@@ -159,11 +159,11 @@ where
     type OutKey = NeighbourTiles;
     type Error = KeyedError<Node, NodeNotFound>;
 
-    fn try_query(&self, key: NeighbourTiles<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+    fn resolve(&self, key: NeighbourTiles<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         let caret: Caret<Node> = key.into();
         Ok(Query::new(
             self.as_ref(),
-            NeighbourTiles(Caret::new(*self.try_query(caret.id)?, caret.side)),
+            NeighbourTiles(Caret::new(*self.resolve(caret.id)?, caret.side)),
         ))
     }
 }
@@ -176,14 +176,14 @@ where
     type OutKey = NeighbourSurfaces;
     type Error = KeyedError<Node, NodeNotFound>;
 
-    fn try_query(
+    fn resolve(
         &self,
         key: NeighbourSurfaces<Node>,
     ) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         let caret: Caret<Node> = key.into();
         Ok(Query::new(
             self.as_ref(),
-            NeighbourSurfaces(Caret::new(*self.try_query(caret.id)?, caret.side)),
+            NeighbourSurfaces(Caret::new(*self.resolve(caret.id)?, caret.side)),
         )
         .into_normalised())
     }

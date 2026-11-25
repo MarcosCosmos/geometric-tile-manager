@@ -180,10 +180,10 @@ where
     type OutKey = Caret;
     type Error = KeyedError<Node, NodeNotFound>;
 
-    fn try_query(&self, key: Caret<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+    fn resolve(&self, key: Caret<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         Ok(Query::new(
             self.as_ref(),
-            Caret::new(*self.try_query(key.id)?, key.side),
+            Caret::new(*self.resolve(key.id)?, key.side),
         ))
     }
 }

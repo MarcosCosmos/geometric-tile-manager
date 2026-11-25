@@ -1,3 +1,4 @@
+use std::collections::hash_map::Keys;
 use crate::area::{Area, AreaQuery};
 use crate::caret::Caret;
 use crate::command::transform::SegmentedArea;
@@ -6,7 +7,7 @@ use crate::error::{KeyedError, KeyedSnafu};
 use crate::geometry::{
     AreaBounds, Axis, Axis::*, AxisBounds, BoundsAlignment, Cardinal, Sign, Sign::*,
 };
-use crate::iter::IterativeQueryNavigation;
+use crate::iter::{IterativeQueryNavigation, QueryIter};
 use crate::key::QueryKey;
 use crate::line::{Line, LineQuery};
 use crate::neighbours::{NeighbourSurfaces, NeighbourTiles, NeighbourhoodQuery};
@@ -140,7 +141,6 @@ impl Graph {
         }
     }
 
-    /// low-level resizing is always done with one side fixed in place (only the non-anchored side actually moves)
     pub(crate) fn transform_area(
         &mut self,
         container: &SegmentedArea,
@@ -388,7 +388,22 @@ impl Graph {
             }
         }
     }
+    
+    pub fn iter(&self) -> QueryIter<NodeId, Keys<NodeId, AreaBounds>> {
+        QueryIter::new(self, self.bounds.keys())
+    }
 }
+
+impl<'a> IntoIterator for &'a Graph {
+    type Item = Query<'a, NodeId>;
+    /// Note: The type of the inner iter should not be considered stable information
+    type IntoIter = QueryIter<'a, NodeId, Keys<'a, NodeId, AreaBounds>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 
 /// a mirror of the index trait specifically to facilitate neighbourhood queries.
 /// Don't want to make it public because I don't want to expose the implementation details of the graph other than through queries.
@@ -423,7 +438,7 @@ impl QueryContext<Uuid> for Graph {
     type OutKey = NodeId;
     type Error = KeyedError<Uuid, NodeNotFound>;
 
-    fn try_query(&self, key: Uuid) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+    fn resolve(&self, key: Uuid) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         let id = NodeId(key);
         if !self.bounds.contains_key(&id) {
             Err(NodeNotFound).with_context(|_| KeyedSnafu { key })

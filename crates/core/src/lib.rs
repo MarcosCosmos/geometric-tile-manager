@@ -12,6 +12,4 @@ pub mod key;
 pub mod line;
 pub mod neighbours;
 pub mod node;
-pub mod point;
 pub mod query;
-pub mod state;

@@ -70,7 +70,7 @@ where
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct KeyIter<'a, K, Iter>
+pub struct QueryIter<'a, K, Iter>
 where
     K: QueryKey,
     Iter: Iterator<Item = &'a K>,
@@ -79,7 +79,7 @@ where
     inner: Iter,
 }
 
-impl<'a, K, Iter> KeyIter<'a, K, Iter>
+impl<'a, K, Iter> QueryIter<'a, K, Iter>
 where
     K: QueryKey,
     Iter: Iterator<Item = &'a K>,
@@ -89,7 +89,7 @@ where
     }
 }
 
-impl<'a, K, Iter> Iterator for KeyIter<'a, K, Iter>
+impl<'a, K, Iter> Iterator for QueryIter<'a, K, Iter>
 where
     K: QueryKey,
     Iter: Iterator<Item = &'a K>,
@@ -103,7 +103,7 @@ where
     }
 }
 
-impl<'a, K, Iter> DoubleEndedIterator for KeyIter<'a, K, Iter>
+impl<'a, K, Iter> DoubleEndedIterator for QueryIter<'a, K, Iter>
 where
     K: QueryKey,
     Iter: DoubleEndedIterator<Item = &'a K>,

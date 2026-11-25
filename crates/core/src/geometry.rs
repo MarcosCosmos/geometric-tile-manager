@@ -56,8 +56,8 @@ impl AxisBounds {
         self.positive - self.negative
     }
 
-    pub fn center(&self) -> f32 {
-        self.negative as f32 + (self.extent() as f32 / 2f32)
+    pub fn center(&self) -> i32 {
+        self.negative + (self.extent() / 2)
     }
 
     pub fn alignment(&self, other: &AxisBounds) -> BoundsAlignment {
@@ -103,6 +103,10 @@ impl AxisBounds {
             negative: self.negative.min(other.negative),
             positive: self.positive.max(other.positive),
         }
+    }
+    
+    pub fn distance_to(&self, other: i32) -> i32 {
+        i32::max(0, i32::min(i32::abs(self.negative - other), i32::abs(self.positive - other)))
     }
 }
 

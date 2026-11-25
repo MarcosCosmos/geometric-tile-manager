@@ -94,6 +94,9 @@ pub trait LineQuery: ElementInformation1D + Deref<Target = Line> {
     fn with_nodes(self, negative_id: NodeId, positive_id: NodeId) -> Self;
     fn into_opposable(self) -> Option<Self>;
     fn into_opposing(self) -> Option<Self>;
+    /// This method finds the line that includes at least one of the existing ends but where both ends have the same `bounds().side_location`, if any exists.
+    /// It will use given sign to choose which direction to scan towards.
+    fn into_straightened(self, direction: Sign) -> Option<Self>;
 }
 
 pub trait LineNavigationMut: NavigationMut + Deref<Target = Line> {
@@ -255,6 +258,36 @@ impl<'a> LineQuery for Query<'a, Line> {
             Line::new(opposing_neg.id, opposing_pos.id, !self.side),
         ))
     }
+
+    /// This method finds the line that includes at least one of the existing ends but where both ends have the same `bounds().side_location`, if any exists.
+    /// It will use given sign to choose which direction to scan towards.
+    fn into_straightened(mut self, direction: Sign) -> Option<Self> {
+        let (cross_neg, cross_pos) = self.side.perpendicular_directions();
+        let current_neg = Query::new(self.context, Caret::new(self.negative_id, cross_neg));
+        let current_pos = Query::new(self.context, Caret::new(self.positive_id, cross_pos));
+        let neg_location = current_neg.with_side(self.side).bounds().side_location;
+        let pos_location = current_pos.with_side(self.side).bounds().side_location;
+        match (direction, neg_location.cmp(&pos_location)) {
+            (_, Ordering::Equal) => Some(self),
+            (Negative, Ordering::Greater) | (Positive, Ordering::Less)
+                if let Some(neg_target) = current_neg
+                    .into_iter(direction)
+                    .find(|caret| caret.bounds().side_location == pos_location) =>
+            {
+                self[Negative] = neg_target.id;
+                Some(self)
+            }
+            (Negative, Ordering::Less) | (Positive, Ordering::Greater)
+                if let Some(pos_target) = current_pos
+                    .into_iter(direction)
+                    .find(|caret| caret.bounds().side_location == neg_location) =>
+            {
+                self[Positive] = pos_target.id;
+                Some(self)
+            }
+            _ => None,
+        }
+    }
 }
 
 impl Ord for Query<'_, Line> {
@@ -298,41 +331,38 @@ impl Navigation for Query<'_, Line> {
                 } else {
                     current_neg = next_neg;
                     current_pos = next_neg;
+                    let mut neg_location =
+                        current_neg.with_side(target_side).bounds().side_location;
+                    let mut pos_location =
+                        current_pos.with_side(target_side).bounds().side_location;
                     loop {
-                        let mut neg_location =
-                            current_neg.with_side(target_side).bounds().side_location;
-                        let mut pos_location =
-                            current_pos.with_side(target_side).bounds().side_location;
-                        while neg_location != pos_location {
-                            if neg_location < pos_location {
-                                if let Some(next_neg) = neg_iter.next() {
+                        match (direction, neg_location.cmp(&pos_location)) {
+                            (_, Ordering::Equal) => {
+                                let candidate = Query::new(self.context, Line::new(current_neg.id, current_pos.id, target_side));
+                                if !candidate.is_connected()
+                                    && let (Some(next_neg), Some(next_pos)) =
+                                    (neg_iter.next(), pos_iter.next())
+                                {
                                     current_neg = next_neg;
-                                    neg_location =
-                                        current_neg.with_side(target_side).bounds().side_location;
-                                } else {
-                                    continue;
-                                }
-                            } else if neg_location > pos_location {
-                                if let Some(next_pos) = pos_iter.next() {
                                     current_pos = next_pos;
-                                    pos_location =
-                                        current_pos.with_side(target_side).bounds().side_location;
                                 } else {
-                                    continue;
+                                    break Some(*candidate);
                                 }
+                            },
+                            (Negative, Ordering::Greater) | (Positive, Ordering::Less)
+                            if let Some(next_neg) = neg_iter.next() =>
+                            {
+                                current_neg = next_neg;
+                                neg_location = next_neg.with_side(target_side).bounds().side_location;
                             }
-                        }
-
-                        candidate = Line::new(current_neg.id, current_pos.id, target_side);
-                        if !Query::new(self.context, candidate).is_connected()
-                            && let (Some(next_neg), Some(next_pos)) =
-                                (neg_iter.next(), pos_iter.next())
-                        {
-                            current_neg = next_neg;
-                            current_pos = next_pos;
-                        } else {
-                            break Some(candidate);
-                        }
+                            (Negative, Ordering::Less) | (Positive, Ordering::Greater)
+                            if let Some(next_pos) = pos_iter.next() => {
+                                current_pos = next_pos;
+                                pos_location =
+                                    current_pos.with_side(target_side).bounds().side_location;
+                            }
+                            _ => break None,
+                        };
                     }
                 }
             } else {
@@ -352,13 +382,13 @@ where
 
     type Error = KeyedError<Line<Node>, QueryError<Node, T::Error, LineProblem>>;
 
-    fn try_query(&self, key: Line<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+    fn resolve(&self, key: Line<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
         (|| {
             Ok(Query::new(
                 self.as_ref(),
                 Line::new(
-                    *self.try_query(key[Negative])?,
-                    *self.try_query(key[Positive])?,
+                    *self.resolve(key[Negative])?,
+                    *self.resolve(key[Positive])?,
                     key.side,
                 ),
             )

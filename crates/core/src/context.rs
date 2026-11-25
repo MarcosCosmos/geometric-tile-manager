@@ -19,5 +19,5 @@ where
     /// Examples of how this can be used include:
     /// - e.g. assigning tags/names to node ids (without storing that in the core graph)
     /// - grid snapping, by creating a command/key that resolves to look internally for a nearby line and outputs that instead.
-    fn try_query(&self, key: K) -> Result<Query<'_, Self::OutKey>, Self::Error>;
+    fn resolve(&self, key: K) -> Result<Query<'_, Self::OutKey>, Self::Error>;
 }

@@ -47,7 +47,7 @@ where
     type Error = T::Error;
 
     fn try_execute(&mut self, command: Com) -> Result<Self::Response, Self::Error> {
-        let out_com = *(*self).try_query(command)?;
+        let out_com = *(*self).resolve(command)?;
         Ok(self.execute(out_com))
     }
 }

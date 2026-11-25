@@ -2,27 +2,33 @@ use geowm_core::caret::{Caret, CaretNavigationMut};
 use geowm_core::context::QueryContext;
 use geowm_core::geometry::{Axis, Cardinal, Sign, Sign::*};
 use geowm_core::graph::{Graph, NodeId};
+use geowm_core::iter::IterativeQueryNavigation;
 use geowm_core::neighbours::{NeighbourSurfaces, NeighbourTiles, Neighbours};
+use geowm_core::node::NodeQuery;
 use geowm_core::query::{
     ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, Navigation,
     NavigationMut, Query,
 };
+use std::collections::HashMap;
 use std::ops::Deref;
 use uuid::Uuid;
+use crate::coord::Coord;
+
+pub struct HistoryCursor {
+    coord: Coord,
+    axis: Axis,
+}
+
 pub struct FocusState {
     target: Option<Caret>,
-    negative_history: Vec<Caret>,
-    positive_history: Vec<Caret>,
-    history_axis: Axis,
+    cursors: HashMap<NodeId, HistoryCursor>,
 }
 
 impl FocusState {
     pub fn new() -> Self {
         Self {
             target: None,
-            negative_history: Vec::new(),
-            positive_history: Vec::new(),
-            history_axis: Axis::Horizontal,
+            cursors: HashMap::new(),
         }
     }
 
@@ -31,25 +37,37 @@ impl FocusState {
     }
 
     /// checks if the current caret still exists in the graph, and sets it to none if so
-    pub fn sanitize(&mut self, graph: &Graph) {
+    fn prune(&mut self, graph: &Graph) {
         self.target
-            .take_if(|c| graph.try_query(Into::<Uuid>::into(c.id)).is_err());
+            .take_if(|c| graph.resolve(Uuid::from(c.id)).is_err());
+        self.cursors
+            .retain(|&id, _| graph.resolve(Uuid::from(id)).is_ok());
     }
 
     /// returns none if there is no current focus
     pub fn try_navigate<'b>(&mut self, graph: &'b Graph) -> Option<FocusNavigator<'_, 'b>> {
-        self.sanitize(graph);
+        self.prune(graph);
         if self.target.is_some() {
-            Some(FocusNavigator { state: self, graph })
+            Some(FocusNavigator {
+                state: self,
+                context: graph,
+            })
         } else {
             None
         }
     }
 
     pub fn navigate<'b>(&mut self, graph: &'b Graph, default: Caret) -> FocusNavigator<'_, 'b> {
-        self.sanitize(graph);
-        self.target.get_or_insert(default);
-        FocusNavigator { state: self, graph }
+        self.prune(graph);
+        let was_none = self.target.is_none();
+        let mut nav = FocusNavigator {
+            state: self,
+            context: graph,
+        };
+        if was_none {
+            nav.set_target(default);
+        }
+        nav
     }
 }
 
@@ -61,12 +79,12 @@ impl Default for FocusState {
 
 pub struct FocusNavigator<'a, 'b> {
     state: &'a mut FocusState,
-    graph: &'b Graph,
+    context: &'b Graph,
 }
 
 /// The navigator does it's best to stick to facilitate navigating tiles in a stable and minimal fashion.
 /// When focusing directionally, it will stick to any gutter it is already in if possible for that direction.
-/// Otherwise, it will look for the neighbour in the given direction that is closest (via the center point).
+/// Otherwise, it will look for the neighbour in the given direction that is closest (via the center Coord).
 /// If that neighbour is the containing surface, it will try to move to the next surface over. If that succeeds, it will try to check for a similarly nearest tile inside that surface.
 /// When moving outside of a gutter, the resulting caret will always be on the side facing opposite the requested direction.
 /// It also maintains miminal single-axis history to ensure these movements are reversible.
@@ -74,31 +92,8 @@ pub struct FocusNavigator<'a, 'b> {
 /// Note: the navigator is a short-lived controller that wraps an internal state and an immutable graph reference, so that said graph reference can be freely released.
 /// todo: this may potentially manage shrinking and expanding selection gutters about the focus in future
 impl<'a, 'b> FocusNavigator<'a, 'b> {
-    fn history(&self, sign: Sign) -> &Vec<Caret> {
-        match sign {
-            Negative => &self.state.negative_history,
-            Positive => &self.state.positive_history,
-        }
-    }
-
-    fn history_mut(&mut self, sign: Sign) -> &mut Vec<Caret> {
-        match sign {
-            Negative => &mut self.state.negative_history,
-            Positive => &mut self.state.positive_history,
-        }
-    }
-
-    fn nearest_by_centers<T>(&self, candidates: T, axis: Axis) -> Option<NodeId>
-    where
-        T: Iterator<Item = Query<'a, NodeId>>,
-    {
-        let center = Query::new(self.graph, **self).bounds().axis_bounds.center();
-        Some(*candidates.min_by(|a, b| {
-            f32::total_cmp(
-                &f32::abs(a.bounds()[axis].center() - center),
-                &f32::abs(b.bounds()[axis].center() - center),
-            )
-        })?)
+    fn active_cursor(&self) -> &HistoryCursor {
+        &self.state.cursors[&*Query::new(self.context, (**self).id).into_containing_surface()]
     }
 }
 
@@ -113,58 +108,58 @@ impl Deref for FocusNavigator<'_, '_> {
 impl Navigation for FocusNavigator<'_, '_> {
     type Direction = Cardinal;
     fn peek(&self, direction: Cardinal) -> Option<Caret> {
-        let current = Query::new(self.graph, **self);
-        let candidates = {
-            let prelims: Query<Neighbours> = match current.kind() {
-                ElementKind::Surface => Query::<NeighbourSurfaces>::from(current).into(),
-                ElementKind::Tile => {
-                    let immediate = Query::<NeighbourTiles>::from(current);
-                    if let Some(node) = immediate.into_iter().next()
-                        && node.kind() == ElementKind::Surface
-                    {
-                        Query::<NeighbourSurfaces>::from(current).into()
-                    } else {
-                        immediate.into()
-                    }
-                }
-                _ => panic!(),
-            };
-            match *prelims {
-                Neighbours::Surfaces(_)
-                    if let Some(next_surface_id) =
-                        self.nearest_by_centers(prelims.into_iter(), direction.axis) =>
-                {
-                    let distant = Query::new(
-                        self.graph,
-                        NeighbourTiles(Caret::new(next_surface_id, direction)),
-                    );
-                    if distant
-                        .into_iter()
-                        .any(|node| node.kind() == ElementKind::Tile)
-                    {
-                        distant.into()
-                    } else {
-                        prelims
-                    }
-                }
-                _ => prelims,
-            }
-        };
+        let current = Query::new(self.context, **self);
 
-        if self.state.history_axis == direction.axis
-            && let Some(&previous) = self
-                .history(direction.sign)
-                .last()
-                .filter(|c| candidates.into_iter().any(|id| *id == c.id))
+        if direction.axis != self.side.axis
+            && let Some(result) = current.peek(direction.sign)
         {
-            Some(previous)
-        } else if direction.axis != self.side.axis
-            && let Some(caret) = Query::new(self.graph, *self.deref()).peek(direction.sign)
-        {
-            Some(caret)
+            Some(result)
         } else {
-            self.nearest_by_centers(candidates.into_iter(), direction.axis)
-                .map(|neighbour| Caret::new(neighbour, !direction))
+            let cursor = self.active_cursor();
+            let axis = direction.axis;
+            let historical_location = cursor.coord[axis];
+            let candidates = {
+                let prelims: Query<Neighbours> = match current.kind() {
+                    ElementKind::Surface => Query::<NeighbourSurfaces>::from(current).into(),
+                    ElementKind::Tile => {
+                        let immediate = Query::<NeighbourTiles>::from(current);
+                        if let Some(node) = immediate.into_iter().next()
+                            && node.kind() == ElementKind::Surface
+                        {
+                            Query::<NeighbourSurfaces>::from(current).into()
+                        } else {
+                            immediate.into()
+                        }
+                    }
+                    _ => panic!(),
+                };
+                match *prelims {
+                    Neighbours::Surfaces(_)
+                        if let Some(next_surface_id) = prelims
+                            .into_iter()
+                            .min_by_key(|node| node.bounds()[axis].distance_to(historical_location))
+                            .map(|node| *node) =>
+                    {
+                        let distant = Query::new(
+                            self.context,
+                            NeighbourTiles(Caret::new(next_surface_id, direction)),
+                        );
+                        if distant
+                            .into_iter()
+                            .any(|node| node.kind() == ElementKind::Tile)
+                        {
+                            distant.into()
+                        } else {
+                            prelims
+                        }
+                    }
+                    _ => prelims,
+                }
+            };
+            candidates
+                .into_iter()
+                .min_by_key(|node| node.bounds()[axis].distance_to(historical_location))
+                .map(|node| Caret::new(*node, !direction))
         }
     }
 }
@@ -187,28 +182,47 @@ impl NavigationMut for FocusNavigator<'_, '_> {
         // we'll have to decide whether or not to deliberately clean it after operations but for now it is relatively safer to do a check
         // also this draft doesn't currently account for content swapping, which would probably be supported by mapping layer instead of managing more complex graph manipulations
         // for that we will probably need id type parameterisation for carets, e.g. with a newtype for outer ids, and have outer ids be what is stored in the nav state.
-        let destination = self.peek(direction)?;
-        if direction.axis == self.state.history_axis {
-            let past = self.history_mut(direction.sign);
-            if past.pop_if(|top| top.id == destination.id).is_none() {
-                past.clear();
+        let target = self.peek(direction)?;
+        self.state.target = Some(target);
+        // this is the history for the new target now!
+        let target = Query::new(self.context, target);
+        let target_surface_id = *Query::new(self.context, target.id).into_containing_surface();
+        let bounds = target.bounds();
+        if let Some(cursor) = self.state.cursors.get_mut(&target_surface_id) {
+            if direction.axis == cursor.axis {
+                cursor.coord[direction.axis] = bounds.side_location;
+            } else {
+                cursor.coord[cursor.axis] = bounds.axis_bounds.center();
             }
+            cursor.axis = direction.axis;
         } else {
-            self.state.negative_history.clear();
-            self.state.positive_history.clear();
-            self.state.history_axis = direction.axis;
-            let current = self.state.target?;
-            self.history_mut(!direction.sign).push(current);
+            let axis = target.side.axis;
+            let mut location = Coord::default();
+            location[axis] = bounds.axis_bounds.center();
+            location[!axis] = bounds.side_location;
+            self.state
+                .cursors
+                .insert(target_surface_id, HistoryCursor { coord: location, axis });
         }
-        self.state.target = Some(destination);
+
         Some(self)
     }
 
     /// This allows arbitrary updates to the focus.
     /// Always clears the history
     fn set_target(&mut self, target: Caret) {
-        self.state.negative_history.clear();
-        self.state.positive_history.clear();
-        self.state.target = Some(target);
+        if target != **self {
+            self.state.target = Some(target);
+            let target = Query::new(self.context, target);
+            let bounds = target.bounds();
+            let surface_id = *Query::<NodeId>::from(target).into_containing_surface();
+            let axis = target.side.axis;
+            let mut location = Coord::default();
+            location[axis] = bounds.axis_bounds.center();
+            location[!axis] = bounds.side_location;
+            self.state
+                .cursors
+                .insert(surface_id, HistoryCursor { coord: location, axis });
+        }
     }
 }
