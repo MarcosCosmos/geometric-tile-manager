@@ -1,12 +1,12 @@
-use geowm_core::context::QueryContext;
-use geowm_core::error::{KeyedError, KeyedSnafu};
-use geowm_core::geometry::Axis::{Horizontal, Vertical};
-use geowm_core::geometry::Axis;
-use geowm_core::graph::{Graph, NodeId};
-use geowm_core::key::QueryKey;
-use geowm_core::node::{NodeNotFound, NodeQuery};
-use geowm_core::query::{ElementInformation, ElementInformation2D, ElementKind, Query};
-use markers_derive::QueryKey;
+use geotm_core::context::QueryContext;
+use geotm_core::error::{KeyedError, KeyedSnafu};
+use geotm_core::geometry::Axis;
+use geotm_core::geometry::Axis::{Horizontal, Vertical};
+use geotm_core::graph::{Graph, NodeId};
+use geotm_core::key::QueryKey;
+use geotm_core::node::{NodeNotFound, NodeQuery};
+use geotm_core::query::{ElementInformation, ElementInformation2D, ElementKind, Query};
+use geotm_macros::QueryKey;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use std::cmp::Ordering;
@@ -45,7 +45,10 @@ impl QueryContext<Coord> for Graph {
     /// This method finds the node nearest to the given point, if any nodes (at all) exist.
     /// For points inside surfaces, it will prefer any tiles inside the surface over the surface itself,
     /// but it otherwise targets the nearest node in general.
-    fn resolve(&self, key: Coord) -> Result<Query<Self::OutKey>, KeyedError<Coord, Self::ErrorDetail>> {
+    fn resolve(
+        &self,
+        key: Coord,
+    ) -> Result<Query<Self::OutKey>, KeyedError<Coord, Self::ErrorDetail>> {
         self.iter()
             .map(|node| {
                 let bounds = node.bounds();
@@ -58,12 +61,12 @@ impl QueryContext<Coord> for Graph {
             .min_by(|(a, dist_a, kind_a), (b, dist_b, kind_b)| {
                 match ((dist_a, kind_a), (dist_b, kind_b)) {
                     ((0, ElementKind::Surface), (_, ElementKind::Tile))
-                        if (*b.into_containing_surface().deref() == *a.deref()) =>
+                        if *b.to_surface().deref() == *a.deref() =>
                     {
                         Ordering::Greater
                     }
                     ((_, ElementKind::Tile), (0, ElementKind::Surface))
-                        if (*a.into_containing_surface().deref() == *b.deref()) =>
+                        if *a.to_surface().deref() == *b.deref() =>
                     {
                         Ordering::Less
                     }

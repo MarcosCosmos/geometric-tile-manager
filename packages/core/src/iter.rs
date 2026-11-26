@@ -5,9 +5,9 @@ use std::iter::{Chain, Once};
 use std::ops::Deref;
 
 pub trait IterativeQueryNavigation: GraphQuery + Navigation + Ord {
-    fn into_next(self, direction: Self::Direction) -> Option<Self>;
+    fn to_next(self, direction: Self::Direction) -> Option<Self>;
 
-    fn into_iter(self, direction: Self::Direction) -> NavIter<Self>
+    fn to_iter(self, direction: Self::Direction) -> NavIter<Self>
     where
         Self: Copy,
     {
@@ -18,7 +18,7 @@ impl<T> IterativeQueryNavigation for T
 where
     T: GraphQuery + Navigation + Ord,
 {
-    fn into_next(mut self, direction: Self::Direction) -> Option<Self> {
+    fn to_next(mut self, direction: Self::Direction) -> Option<Self> {
         *self = self.peek(direction)?;
         Some(self)
     }
@@ -64,7 +64,7 @@ where
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.current = self.current.into_next(self.direction)?;
+        self.current = self.current.to_next(self.direction)?;
         Some(self.current)
     }
 }

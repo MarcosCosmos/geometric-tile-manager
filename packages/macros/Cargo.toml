@@ -1,7 +1,7 @@
 [lib]
 proc-macro = true
 [package]
-name = "markers_derive"
+name = "geotm-macros"
 version = "0.1.0"
 edition = "2024"
 

@@ -1,4 +1,3 @@
-use std::collections::hash_map::Keys;
 use crate::area::{Area, AreaQuery};
 use crate::caret::Caret;
 use crate::command::transform::SegmentedArea;
@@ -15,11 +14,12 @@ use crate::node::{NodeNotFound, NodeQuery};
 use crate::query::{
     ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, Query,
 };
+use geotm_macros::QueryKey;
 use itertools::Itertools;
-use markers_derive::QueryKey;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use std::collections::HashMap;
+use std::collections::hash_map::Keys;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::{Index, IndexMut};
@@ -134,7 +134,7 @@ impl Graph {
         let node = Query::new(self, node_id);
         if node.kind() == ElementKind::Surface {
             self.transform_area(
-                &Query::<Area>::from(node).into_segmented(Cardinal::new(axis, Negative)),
+                &Query::<Area>::from(node).to_segmented(Cardinal::new(axis, Negative)),
                 new_bounds,
                 packing_tiebreaker,
             );
@@ -230,11 +230,11 @@ impl Graph {
 
         for (segment, segment_bounds) in container.segments.iter().zip(new_segment_bounds) {
             for cross_segment in Query::new(self, *segment)
-                .into_segments(Cardinal::new(!container.axis, Positive))
+                .to_segments(Cardinal::new(!container.axis, Positive))
                 .collect::<Vec<_>>()
             {
                 let subcontainer = Query::new(self, cross_segment)
-                    .into_segmented(Cardinal::new(container.axis, Positive));
+                    .to_segmented(Cardinal::new(container.axis, Positive));
                 self.transform_area(&subcontainer, segment_bounds, packing_tiebreaker);
             }
         }
@@ -253,7 +253,7 @@ impl Graph {
             Some(
                 destination
                     .into_iter()
-                    .position(|sib| sib.into_side(target.side) <= target)
+                    .position(|sib| sib.to_caret(target.side) <= target)
                     .unwrap(),
             )
         } else {
@@ -298,8 +298,8 @@ impl Graph {
             (
                 replacement.bounds().axis_bounds,
                 replacement
-                    .into_end(Negative)
-                    .into_iter(Positive)
+                    .to_end(Negative)
+                    .to_iter(Positive)
                     .take_while_inclusive(|caret| caret.id != original[Positive])
                     .map(|c| *c)
                     .collect::<Vec<_>>(),
@@ -307,8 +307,8 @@ impl Graph {
         };
 
         let originals: Vec<_> = Query::new(self, original)
-            .into_end(Negative)
-            .into_iter(Positive)
+            .to_end(Negative)
+            .to_iter(Positive)
             .take_while_inclusive(|caret| caret.id != original[Positive])
             .map(|c| *c)
             .collect();
@@ -357,8 +357,8 @@ impl Graph {
     /// note: the replacements are attached to the scope, since it's possible that at this stage the scope has no opposites yet
     pub(crate) fn update_connections(&mut self, target: Line) {
         let targets: Vec<_> = Query::new(self, target)
-            .into_end(Negative)
-            .into_iter(Positive)
+            .to_end(Negative)
+            .to_iter(Positive)
             .take_while_inclusive(|caret| caret.id != target[Positive])
             .map(|c| *c)
             .collect();
@@ -388,7 +388,7 @@ impl Graph {
             }
         }
     }
-    
+
     pub fn iter(&self) -> QueryIter<NodeId, Keys<NodeId, AreaBounds>> {
         QueryIter::new(self, self.bounds.keys())
     }
@@ -403,7 +403,6 @@ impl<'a> IntoIterator for &'a Graph {
         self.iter()
     }
 }
-
 
 /// a mirror of the index trait specifically to facilitate neighbourhood queries.
 /// Don't want to make it public because I don't want to expose the implementation details of the graph other than through queries.
@@ -438,7 +437,10 @@ impl QueryContext<Uuid> for Graph {
     type OutKey = NodeId;
     type ErrorDetail = NodeNotFound;
 
-    fn resolve(&self, key: Uuid) -> Result<Query<'_, Self::OutKey>, KeyedError<Uuid, Self::ErrorDetail>> {
+    fn resolve(
+        &self,
+        key: Uuid,
+    ) -> Result<Query<'_, Self::OutKey>, KeyedError<Uuid, Self::ErrorDetail>> {
         let id = NodeId(key);
         if !self.bounds.contains_key(&id) {
             Err(NodeNotFound).with_context(|_| KeyedSnafu { key })

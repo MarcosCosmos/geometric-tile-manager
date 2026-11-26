@@ -1,5 +1,5 @@
-pub mod focus;
 pub mod coord;
+pub mod focus;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right

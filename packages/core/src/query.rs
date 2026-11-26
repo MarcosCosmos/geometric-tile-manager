@@ -78,6 +78,12 @@ where
     pub fn new(context: &'a Graph, key: K) -> Self {
         Self { context, key }
     }
+    pub fn to<Q>(self, key: Q) -> Query<'a, Q>
+    where
+        Q: QueryKey,
+    {
+        self.to(key)
+    }
 }
 
 impl<K> Deref for Query<'_, K>

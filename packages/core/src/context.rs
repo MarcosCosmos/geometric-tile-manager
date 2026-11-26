@@ -1,8 +1,8 @@
+use crate::error::KeyedError;
 use crate::graph::Graph;
 use crate::key::QueryKey;
 use crate::query::Query;
 use std::error::Error;
-use crate::error::KeyedError;
 
 pub trait QueryContext<K>
 where

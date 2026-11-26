@@ -17,7 +17,7 @@ use crate::query::{
     ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GroupInformation,
     Query,
 };
-use markers_derive::{QueryKey, ValidationError};
+use geotm_macros::{QueryKey, ValidationError};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use std::cmp::Ordering;
@@ -127,30 +127,30 @@ where
 pub trait AreaQuery: ElementInformation2D {
     type LineQuery: LineQuery;
     type NodeQuery: NodeQuery;
-    fn into_side(self, side: Cardinal) -> Self::LineQuery;
-    fn into_corner(self, corner: Diagonal) -> Self::NodeQuery;
+    fn to_line(self, side: Cardinal) -> Self::LineQuery;
+    fn to_corner(self, corner: Diagonal) -> Self::NodeQuery;
 
-    fn into_segmented(self, start_side: Cardinal) -> SegmentedArea {
-        SegmentedArea::new(self.into_segments(start_side).collect(), start_side.axis)
+    fn to_segmented(self, start_side: Cardinal) -> SegmentedArea {
+        SegmentedArea::new(self.to_segments(start_side).collect(), start_side.axis)
     }
 
-    fn into_validated(self) -> Result<Self, AreaProblem>
+    fn to_validated(self) -> Result<Self, AreaProblem>
     where
         Self::Target: Debug;
-    fn into_segments(self, start_side: Cardinal) -> impl Iterator<Item = Area>;
+    fn to_segments(self, start_side: Cardinal) -> impl Iterator<Item = Area>;
     /// Constrain an area by updating one of its sides with a line.
     /// Useful for constraining selection areas e.g. delete selections cannot include the deleted tile, and generally need to start from a given line.
     /// Note: the resulting area may become invalid. If not pre-asserted, check with into_validated!
-    fn with_constraint(self, constraint: Line) -> Self;
+    fn with_side(self, constraint: Line) -> Self;
 }
 
 impl ElementInformation for Query<'_, Area> {
     fn kind(&self) -> ElementKind {
         match (
-            Query::new(self.context, Caret::new(self.north_west, NORTH)).kind(),
-            Query::new(self.context, Caret::new(self.north_east, NORTH)).kind(),
-            Query::new(self.context, Caret::new(self.south_east, NORTH)).kind(),
-            Query::new(self.context, Caret::new(self.south_west, NORTH)).kind(),
+            self.to(Caret::new(self.north_west, NORTH)).kind(),
+            self.to(Caret::new(self.north_east, NORTH)).kind(),
+            self.to(Caret::new(self.south_east, NORTH)).kind(),
+            self.to(Caret::new(self.south_west, NORTH)).kind(),
         ) {
             (ElementKind::Tile, ElementKind::Tile, ElementKind::Tile, ElementKind::Tile) => {
                 ElementKind::Tile
@@ -167,12 +167,12 @@ impl ElementInformation2D for Query<'_, Area> {
     fn bounds(&self) -> AreaBounds {
         AreaBounds::new(
             AxisBounds::new(
-                self.into_side(WEST).bounds().side_location,
-                self.into_side(EAST).bounds().side_location,
+                self.to_line(WEST).bounds().side_location,
+                self.to_line(EAST).bounds().side_location,
             ),
             AxisBounds::new(
-                self.into_side(NORTH).bounds().side_location,
-                self.into_side(SOUTH).bounds().side_location,
+                self.to_line(NORTH).bounds().side_location,
+                self.to_line(SOUTH).bounds().side_location,
             ),
         )
     }
@@ -180,10 +180,10 @@ impl ElementInformation2D for Query<'_, Area> {
 
 impl<'a> GroupInformation for Query<'a, Area> {
     fn is_connected(&self) -> bool {
-        self.into_side(NORTH).is_connected()
-            && self.into_side(EAST).is_connected()
-            && self.into_side(SOUTH).is_connected()
-            && self.into_side(WEST).is_connected()
+        self.to_line(NORTH).is_connected()
+            && self.to_line(EAST).is_connected()
+            && self.to_line(SOUTH).is_connected()
+            && self.to_line(WEST).is_connected()
     }
 }
 
@@ -200,37 +200,34 @@ impl<'a> AreaQuery for Query<'a, Area> {
 
     type NodeQuery = Query<'a, NodeId>;
 
-    fn into_side(self, side: Cardinal) -> Self::LineQuery {
-        Query::new(
-            self.context,
-            match side {
-                Cardinal {
-                    axis: Horizontal,
-                    sign: Negative,
-                } => Line::new(self.north_west, self.south_west, side),
-                Cardinal {
-                    axis: Horizontal,
-                    sign: Positive,
-                } => Line::new(self.north_east, self.south_east, side),
-                Cardinal {
-                    axis: Vertical,
-                    sign: Negative,
-                } => Line::new(self.north_east, self.north_west, side),
-                Cardinal {
-                    axis: Vertical,
-                    sign: Positive,
-                } => Line::new(self.south_east, self.south_west, side),
-            },
-        )
+    fn to_line(self, side: Cardinal) -> Self::LineQuery {
+        self.to(match side {
+            Cardinal {
+                axis: Horizontal,
+                sign: Negative,
+            } => Line::new(self.north_west, self.south_west, side),
+            Cardinal {
+                axis: Horizontal,
+                sign: Positive,
+            } => Line::new(self.north_east, self.south_east, side),
+            Cardinal {
+                axis: Vertical,
+                sign: Negative,
+            } => Line::new(self.north_east, self.north_west, side),
+            Cardinal {
+                axis: Vertical,
+                sign: Positive,
+            } => Line::new(self.south_east, self.south_west, side),
+        })
     }
 
-    fn into_corner(self, corner: Diagonal) -> Self::NodeQuery {
-        Query::new(self.context, self[corner])
+    fn to_corner(self, corner: Diagonal) -> Self::NodeQuery {
+        self.to(self[corner])
     }
 
-    fn into_validated(self) -> Result<Self, AreaProblem> {
+    fn to_validated(self) -> Result<Self, AreaProblem> {
         if [NORTH_WEST, NORTH_EAST, SOUTH_EAST, SOUTH_WEST]
-            .map(|diagonal| *self.into_corner(diagonal).into_containing_surface())
+            .map(|diagonal| *self.to_corner(diagonal).to_surface())
             .iter()
             .collect::<HashSet<_>>()
             .len()
@@ -240,7 +237,7 @@ impl<'a> AreaQuery for Query<'a, Area> {
         } else {
             let bad_sides: Vec<Cardinal> = [WEST, NORTH, EAST, SOUTH]
                 .into_iter()
-                .filter(|&side| self.into_side(side).into_validated().is_err())
+                .filter(|&side| self.to_line(side).to_validated().is_err())
                 .collect();
             if !bad_sides.is_empty() {
                 Err(AreaProblem::WrongOrder { bad_sides })
@@ -253,42 +250,42 @@ impl<'a> AreaQuery for Query<'a, Area> {
     /// Constrain an area by updating one of its sides with a line.
     /// Useful for constraining selection areas e.g. delete selections cannot include the deleted tile, and generally need to start from a given line.
     /// Note: the resulting area may become invalid. If not pre-asserted, check with into_validated!
-    fn with_constraint(mut self, constraint: Line) -> Self {
-        match constraint.side {
+    fn with_side(mut self, side: Line) -> Self {
+        match side.side {
             Cardinal {
                 axis: Horizontal,
                 sign: Negative,
             } => {
-                self[NORTH_WEST] = constraint[Negative];
-                self[SOUTH_WEST] = constraint[Positive];
+                self[NORTH_WEST] = side[Negative];
+                self[SOUTH_WEST] = side[Positive];
             }
             Cardinal {
                 axis: Horizontal,
                 sign: Positive,
             } => {
-                self[NORTH_EAST] = constraint[Negative];
-                self[SOUTH_EAST] = constraint[Positive];
+                self[NORTH_EAST] = side[Negative];
+                self[SOUTH_EAST] = side[Positive];
             }
             Cardinal {
                 axis: Vertical,
                 sign: Negative,
             } => {
-                self[NORTH_WEST] = constraint[Negative];
-                self[NORTH_EAST] = constraint[Positive];
+                self[NORTH_WEST] = side[Negative];
+                self[NORTH_EAST] = side[Positive];
             }
             Cardinal {
                 axis: Vertical,
                 sign: Positive,
             } => {
-                self[SOUTH_WEST] = constraint[Negative];
-                self[SOUTH_EAST] = constraint[Positive];
+                self[SOUTH_WEST] = side[Negative];
+                self[SOUTH_EAST] = side[Positive];
             }
         }
         self
     }
 
-    fn into_segments(self, start_side: Cardinal) -> impl Iterator<Item = Self::Target> {
-        let end_location = self.into_side(!start_side).bounds().side_location;
+    fn to_segments(self, start_side: Cardinal) -> impl Iterator<Item = Self::Target> {
+        let end_location = self.to_line(!start_side).bounds().side_location;
 
         let terminal_ordering = match start_side.sign {
             Negative => Ordering::Greater,
@@ -296,17 +293,17 @@ impl<'a> AreaQuery for Query<'a, Area> {
         };
 
         let mut iter = self
-            .into_side(start_side)
-            .into_iter(!start_side.sign)
+            .to_line(start_side)
+            .to_iter(!start_side.sign)
             .include_if(|line| line.kind() == ElementKind::Tile)
             .take_while(move |line| {
-                line.into_end(Negative)
+                line.to_end(Negative)
                     .bounds()
                     .side_location
                     .cmp(&end_location)
                     != terminal_ordering
                     && line
-                        .into_end(Positive)
+                        .to_end(Positive)
                         .bounds()
                         .side_location
                         .cmp(&end_location)
@@ -362,13 +359,16 @@ impl<'a> AreaQuery for Query<'a, Area> {
 impl<T, Node> QueryContext<Area<Node>> for T
 where
     T: QueryContext<Node, OutKey = NodeId>,
-    Node: QueryKey
+    Node: QueryKey,
 {
     type OutKey = Area;
 
     type ErrorDetail = QueryError<Node, T::ErrorDetail, AreaProblem>;
 
-    fn resolve(&self, key: Area<Node>) -> Result<Query<'_, Self::OutKey>, KeyedError<Area<Node>, Self::ErrorDetail>> {
+    fn resolve(
+        &self,
+        key: Area<Node>,
+    ) -> Result<Query<'_, Self::OutKey>, KeyedError<Area<Node>, Self::ErrorDetail>> {
         (|| {
             Ok(Query::new(
                 self.as_ref(),
@@ -379,7 +379,7 @@ where
                     south_west: *self.resolve(key.south_west)?,
                 },
             )
-            .into_validated()?)
+            .to_validated()?)
         })()
         .with_context(|_| KeyedSnafu { key })
     }

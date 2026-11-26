@@ -46,8 +46,8 @@ query_impl! {From<Caret> | TryFrom<Line | Area> for NodeId}
 pub trait NodeQuery: ElementInformation2D {
     type CaretInformation: CaretQuery;
     type AreaInformation: AreaQuery;
-    fn into_side(self, side: Cardinal) -> Self::CaretInformation;
-    fn into_containing_surface(self) -> Self;
+    fn to_caret(self, side: Cardinal) -> Self::CaretInformation;
+    fn to_surface(self) -> Self;
 }
 
 impl ElementInformation for Query<'_, NodeId> {
@@ -70,19 +70,17 @@ impl<'a> NodeQuery for Query<'a, NodeId> {
     type CaretInformation = Query<'a, Caret>;
     type AreaInformation = Query<'a, Area>;
 
-    fn into_side(self, side: Cardinal) -> Query<'a, Caret> {
-        Query::new(self.context, Caret::new(*self, side))
+    fn to_caret(self, side: Cardinal) -> Query<'a, Caret> {
+        self.to(Caret::new(*self, side))
     }
 
-    fn into_containing_surface(self) -> Query<'a, NodeId> {
-        Query::new(
-            self.context,
-            self.context
-                .containing_surfaces
-                .get(&*self)
-                .copied()
-                .unwrap_or(*self),
-        )
+    fn to_surface(self) -> Query<'a, NodeId> {
+        self.to(self
+            .context
+            .containing_surfaces
+            .get(&*self)
+            .copied()
+            .unwrap_or(*self))
     }
 }
 

@@ -104,9 +104,15 @@ impl AxisBounds {
             positive: self.positive.max(other.positive),
         }
     }
-    
+
     pub fn distance_to(&self, other: i32) -> i32 {
-        i32::max(0, i32::min(i32::abs(self.negative - other), i32::abs(self.positive - other)))
+        i32::max(
+            0,
+            i32::min(
+                i32::abs(self.negative - other),
+                i32::abs(self.positive - other),
+            ),
+        )
     }
 }
 

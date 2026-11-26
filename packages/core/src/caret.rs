@@ -5,18 +5,19 @@ use crate::graph::NodeId;
 use crate::key::QueryKey;
 use crate::line::Line;
 use crate::neighbours::{NeighbourSurfaces, NeighbourTiles, Neighbours};
-use crate::node::{NodeNotFound, NodeQuery, TooManyNodesError};
+use crate::node::{NodeQuery, TooManyNodesError};
 use crate::query::{
-    ElementInformation, ElementInformation1D, ElementKind, Navigation, NavigationMut, Query,
+    ElementInformation, ElementInformation1D, ElementKind, Navigation, NavigationMut,
+    Query,
 };
 use crate::query_impl;
-use markers_derive::QueryKey;
+use geotm_macros::QueryKey;
 use serde::{Deserialize, Serialize};
+use snafu::ResultExt;
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::iter::Map;
 use std::ops::Deref;
-use snafu::ResultExt;
 
 /// A caret is a position on the side of a node.
 /// they provide the step function for navigating along the gutter of carets parallel to them.
@@ -88,9 +89,7 @@ query_impl! { From<NeighbourTiles | NeighbourSurfaces | Neighbours> | TryFrom<Li
 
 pub trait CaretQuery: Deref<Target = Caret> {
     type NodeQuery: NodeQuery;
-    fn with_node(self, id: NodeId) -> Self;
-
-    fn with_side(self, side: Cardinal) -> Self;
+    fn to_node(self) -> Self::NodeQuery;
 }
 
 pub trait CaretNavigationMut: NavigationMut + Deref<Target = Caret> {
@@ -101,7 +100,7 @@ pub trait CaretNavigationMut: NavigationMut + Deref<Target = Caret> {
 
 impl ElementInformation for Query<'_, Caret> {
     fn kind(&self) -> ElementKind {
-        Query::new(self.context, self.id).kind()
+        self.to(self.id).kind()
     }
 }
 
@@ -118,20 +117,9 @@ impl ElementInformation1D for Query<'_, Caret> {
 
 impl<'a> CaretQuery for Query<'a, Caret> {
     type NodeQuery = Query<'a, NodeId>;
-    fn with_node(mut self, id: NodeId) -> Self
-    where
-        Self: Sized,
-    {
-        self.id = id;
-        self
-    }
 
-    fn with_side(mut self, side: Cardinal) -> Self
-    where
-        Self: Sized,
-    {
-        self.side = side;
-        self
+    fn to_node(self) -> Self::NodeQuery {
+        self.to(self.id)
     }
 }
 
@@ -150,9 +138,9 @@ impl Navigation for Query<'_, Caret> {
             axis: !self.side.axis,
             sign: direction,
         };
-        Query::<NeighbourTiles>::from(self.with_side(search_direction))
+        self.to(NeighbourTiles(Caret::new(self.id, search_direction)))
             .into_iter()
-            .map(|node| node.into_side(self.side))
+            .map(|node| self.to(Caret::new(*node, self.side)))
             .take_while(|c| c.kind() == ElementKind::Tile)
             .find(|&c| c.bounds().side_location == location)
             .map(|c| *c)
@@ -181,10 +169,16 @@ where
     type OutKey = Caret;
     type ErrorDetail = KeyedError<Node, T::ErrorDetail>;
 
-    fn resolve(&self, key: Caret<Node>) -> Result<Query<'_, Self::OutKey>, KeyedError<Caret<Node>, Self::ErrorDetail>> {
+    fn resolve(
+        &self,
+        key: Caret<Node>,
+    ) -> Result<Query<'_, Self::OutKey>, KeyedError<Caret<Node>, Self::ErrorDetail>> {
         Ok(Query::new(
             self.as_ref(),
-            Caret::new(*self.resolve(key.id).with_context(|_| KeyedSnafu { key })?, key.side),
+            Caret::new(
+                *self.resolve(key.id).with_context(|_| KeyedSnafu { key })?,
+                key.side,
+            ),
         ))
     }
 }

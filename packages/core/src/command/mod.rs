@@ -1,11 +1,11 @@
 use crate::context::QueryContext;
+use crate::error::KeyedError;
 use crate::key::QueryKey;
-use markers_derive::Command;
+use geotm_macros::Command;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::error::Error;
 use std::fmt::Debug;
-use crate::error::KeyedError;
 
 mod add_surface;
 pub mod add_tile;
@@ -36,7 +36,10 @@ where
 {
     type Response: Serialize;
     type ErrorDetail: Error + 'static;
-    fn try_execute(&mut self, command: Com) -> Result<Self::Response, KeyedError<Com, Self::ErrorDetail>>;
+    fn try_execute(
+        &mut self,
+        command: Com,
+    ) -> Result<Self::Response, KeyedError<Com, Self::ErrorDetail>>;
 }
 
 impl<Com, T> CommandExecutor<Com> for T
@@ -47,7 +50,10 @@ where
     type Response = T::Response;
     type ErrorDetail = T::ErrorDetail;
 
-    fn try_execute(&mut self, command: Com) -> Result<Self::Response, KeyedError<Com, Self::ErrorDetail>> {
+    fn try_execute(
+        &mut self,
+        command: Com,
+    ) -> Result<Self::Response, KeyedError<Com, Self::ErrorDetail>> {
         let out_com = *(*self).resolve(command)?;
         Ok(self.execute(out_com))
     }

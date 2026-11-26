@@ -1,18 +1,17 @@
-use geowm_core::caret::{Caret, CaretNavigationMut};
-use geowm_core::context::QueryContext;
-use geowm_core::geometry::{Axis, Cardinal, Sign, Sign::*};
-use geowm_core::graph::{Graph, NodeId};
-use geowm_core::iter::IterativeQueryNavigation;
-use geowm_core::neighbours::{NeighbourSurfaces, NeighbourTiles, Neighbours};
-use geowm_core::node::NodeQuery;
-use geowm_core::query::{
+use crate::coord::Coord;
+use geotm_core::caret::{Caret, CaretNavigationMut, CaretQuery};
+use geotm_core::context::QueryContext;
+use geotm_core::geometry::{Axis, Cardinal};
+use geotm_core::graph::{Graph, NodeId};
+use geotm_core::neighbours::{NeighbourSurfaces, NeighbourTiles, Neighbours};
+use geotm_core::node::NodeQuery;
+use geotm_core::query::{
     ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, Navigation,
     NavigationMut, Query,
 };
 use std::collections::HashMap;
 use std::ops::Deref;
 use uuid::Uuid;
-use crate::coord::Coord;
 
 pub struct HistoryCursor {
     coord: Coord,
@@ -93,7 +92,7 @@ pub struct FocusNavigator<'a, 'b> {
 /// todo: this may potentially manage shrinking and expanding selection gutters about the focus in future
 impl<'a, 'b> FocusNavigator<'a, 'b> {
     fn active_cursor(&self) -> &HistoryCursor {
-        &self.state.cursors[&*Query::new(self.context, (**self).id).into_containing_surface()]
+        &self.state.cursors[&*Query::new(self.context, (**self).id).to_surface()]
     }
 }
 
@@ -120,13 +119,13 @@ impl Navigation for FocusNavigator<'_, '_> {
             let historical_location = cursor.coord[axis];
             let candidates = {
                 let prelims: Query<Neighbours> = match current.kind() {
-                    ElementKind::Surface => Query::<NeighbourSurfaces>::from(current).into(),
+                    ElementKind::Surface => current.to(NeighbourSurfaces(*current)).into(),
                     ElementKind::Tile => {
-                        let immediate = Query::<NeighbourTiles>::from(current);
+                        let immediate = current.to(NeighbourTiles(*current));
                         if let Some(node) = immediate.into_iter().next()
                             && node.kind() == ElementKind::Surface
                         {
-                            Query::<NeighbourSurfaces>::from(current).into()
+                            current.to(NeighbourSurfaces(*node.to_caret(direction))).into()
                         } else {
                             immediate.into()
                         }
@@ -135,15 +134,12 @@ impl Navigation for FocusNavigator<'_, '_> {
                 };
                 match *prelims {
                     Neighbours::Surfaces(_)
-                        if let Some(next_surface_id) = prelims
+                        if let Some(next_surface) = prelims
                             .into_iter()
                             .min_by_key(|node| node.bounds()[axis].distance_to(historical_location))
-                            .map(|node| *node) =>
+                            =>
                     {
-                        let distant = Query::new(
-                            self.context,
-                            NeighbourTiles(Caret::new(next_surface_id, direction)),
-                        );
+                        let distant = next_surface.to(NeighbourTiles(*next_surface.to_caret(direction)));
                         if distant
                             .into_iter()
                             .any(|node| node.kind() == ElementKind::Tile)
@@ -186,7 +182,7 @@ impl NavigationMut for FocusNavigator<'_, '_> {
         self.state.target = Some(target);
         // this is the history for the new target now!
         let target = Query::new(self.context, target);
-        let target_surface_id = *Query::new(self.context, target.id).into_containing_surface();
+        let target_surface_id = *target.to_node().to_surface();
         let bounds = target.bounds();
         if let Some(cursor) = self.state.cursors.get_mut(&target_surface_id) {
             if direction.axis == cursor.axis {
@@ -200,9 +196,13 @@ impl NavigationMut for FocusNavigator<'_, '_> {
             let mut location = Coord::default();
             location[axis] = bounds.axis_bounds.center();
             location[!axis] = bounds.side_location;
-            self.state
-                .cursors
-                .insert(target_surface_id, HistoryCursor { coord: location, axis });
+            self.state.cursors.insert(
+                target_surface_id,
+                HistoryCursor {
+                    coord: location,
+                    axis,
+                },
+            );
         }
 
         Some(self)
@@ -215,14 +215,18 @@ impl NavigationMut for FocusNavigator<'_, '_> {
             self.state.target = Some(target);
             let target = Query::new(self.context, target);
             let bounds = target.bounds();
-            let surface_id = *Query::<NodeId>::from(target).into_containing_surface();
+            let surface_id = *target.to(target.id).to_surface();
             let axis = target.side.axis;
             let mut location = Coord::default();
             location[axis] = bounds.axis_bounds.center();
             location[!axis] = bounds.side_location;
-            self.state
-                .cursors
-                .insert(surface_id, HistoryCursor { coord: location, axis });
+            self.state.cursors.insert(
+                surface_id,
+                HistoryCursor {
+                    coord: location,
+                    axis,
+                },
+            );
         }
     }
 }

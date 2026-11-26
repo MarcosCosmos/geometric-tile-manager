@@ -17,7 +17,7 @@ use crate::query::{
     ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GraphQuery,
     GroupInformation, Information, Query,
 };
-use markers_derive::{QueryKey, ValidationError};
+use geotm_macros::{QueryKey, ValidationError};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
@@ -197,21 +197,20 @@ pub trait TransformQuery: GraphQuery + TransformInformation {
 
 impl ElementInformation for Query<'_, Transform> {
     fn kind(&self) -> ElementKind {
-        Query::new(self.context, self.target).kind()
+        self.to(self.target).kind()
     }
 }
 
 impl ElementInformation2D for Query<'_, Transform> {
     fn bounds(&self) -> AreaBounds {
-        Query::new(self.context, self.target).bounds()
+        self.to(self.target).bounds()
     }
 }
 
 impl TransformInformation for Query<'_, Transform> {
     fn surroundings(&self) -> Option<TransformSurroundings> {
-        let target = Query::new(self.context, self.target);
-        let surface_area =
-            Query::<Area>::from(target.into_corner(NORTH_WEST).into_containing_surface());
+        let target = self.to(self.target);
+        let surface_area = Query::<Area>::from(target.to_corner(NORTH_WEST).to_surface());
 
         let initial_bounds = target.bounds()[self.axis];
 
@@ -219,13 +218,9 @@ impl TransformInformation for Query<'_, Transform> {
             None
         } else {
             target
-                .into_side(Cardinal::new(self.axis, Negative))
-                .into_opposing()
-                .map(|start| {
-                    surface_area
-                        .with_constraint(*start)
-                        .into_segmented(start.side)
-                })
+                .to_line(Cardinal::new(self.axis, Negative))
+                .to_opposing()
+                .map(|start| surface_area.with_side(*start).to_segmented(start.side))
         };
 
         // we don't need to force the opposing line here
@@ -233,13 +228,9 @@ impl TransformInformation for Query<'_, Transform> {
             None
         } else {
             target
-                .into_side(Cardinal::new(self.axis, Positive))
-                .into_opposing()
-                .map(|start| {
-                    surface_area
-                        .with_constraint(*start)
-                        .into_segmented(start.side)
-                })
+                .to_line(Cardinal::new(self.axis, Positive))
+                .to_opposing()
+                .map(|start| surface_area.with_side(*start).to_segmented(start.side))
         };
 
         match (maybe_negative, maybe_positive) {
@@ -255,7 +246,7 @@ impl TransformInformation for Query<'_, Transform> {
 
 impl TransformQuery for Query<'_, Transform> {
     fn into_validated(self) -> Result<Self, TransformError> {
-        let target = Query::new(self.context, self.target);
+        let target = self.to(self.target);
         if !target.is_connected() {
             Err(TransformError::NotConnected)?
         };
@@ -264,10 +255,8 @@ impl TransformQuery for Query<'_, Transform> {
 
         for sign in [Negative, Positive] {
             if self.intended_bounds[sign] != initial_bounds[sign] {
-                if let Some(start) = target
-                    .into_side(Cardinal::new(self.axis, sign))
-                    .into_opposing()
-                    && let Some(end) = start.into_iter(sign).last()
+                if let Some(start) = target.to_line(Cardinal::new(self.axis, sign)).to_opposing()
+                    && let Some(end) = start.to_iter(sign).last()
                 {
                     debug_assert_eq!(end.side, !start.side);
                     let end_location = end.bounds().side_location;
@@ -286,15 +275,15 @@ impl TransformQuery for Query<'_, Transform> {
     }
 
     fn into_normalized(mut self) -> Self {
-        let mut target = Query::new(self.context, self.target);
+        let mut target = self.to(self.target);
 
         let initial_bounds = self.bounds()[self.axis];
         for sign in [Negative, Positive] {
             if self.intended_bounds[sign] != initial_bounds[sign] {
                 let direction = Cardinal::new(self.axis, sign);
                 // todo: this can probably be improved by outscanning in a more complex way but for now it's not that important.
-                if let Some(updated_side) = target.into_side(direction).into_opposable() {
-                    target = target.with_constraint(*updated_side);
+                if let Some(updated_side) = target.to_line(direction).to_opposable() {
+                    target = target.with_side(*updated_side);
                 }
             }
         }
@@ -311,13 +300,16 @@ where
     B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
     T: QueryContext<K, OutKey: QueryKey>,
     for<'a> Query<'a, T::OutKey>: Into<Query<'a, Area>>,
-    for<'a> Query<'a, Transform<Area, B>>: TryInto<Query<'a, Transform>, Error=TransformError>
+    for<'a> Query<'a, Transform<Area, B>>: TryInto<Query<'a, Transform>, Error = TransformError>,
 {
     type OutKey = Transform;
 
     type ErrorDetail = QueryError<K, T::ErrorDetail, TransformError>;
 
-    fn resolve(&self, key: Transform<K, B>) -> Result<Query<'_, Self::OutKey>, KeyedError<Transform<K, B>, Self::ErrorDetail>> {
+    fn resolve(
+        &self,
+        key: Transform<K, B>,
+    ) -> Result<Query<'_, Self::OutKey>, KeyedError<Transform<K, B>, Self::ErrorDetail>> {
         (|| {
             let area: Area = *Into::<Query<Area>>::into(self.resolve(key.target)?);
             Ok(Query::new(
@@ -342,7 +334,7 @@ impl RawCommandExecutor<Transform> for Graph {
         }
 
         self.transform_area(
-            &Query::new(self, command.target).into_segmented(WEST),
+            &Query::new(self, command.target).to_segmented(WEST),
             command.intended_bounds,
             Positive,
         );
@@ -352,24 +344,24 @@ impl RawCommandExecutor<Transform> for Graph {
             let area = Query::new(self, negative_area.area());
             let mut new_bounds = area.bounds()[command.axis];
             new_bounds[Positive] = command.intended_bounds[Negative] - 1;
-            let _side_line = *area.into_side(Cardinal::new(command.axis, Positive));
+            let _side_line = *area.to_line(Cardinal::new(command.axis, Positive));
             self.transform_area(negative_area, new_bounds, Negative);
         }
         if let Some(positive_area) = surroundings.part(Negative) {
             let area = Query::new(self, positive_area.area());
             let mut new_bounds = area.bounds()[command.axis];
             new_bounds[Positive] = command.intended_bounds[Positive] + 1;
-            let _side_line = *area.into_side(Cardinal::new(command.axis, Negative));
+            let _side_line = *area.to_line(Cardinal::new(command.axis, Negative));
             self.transform_area(positive_area, new_bounds, Positive);
         }
 
         let surrounding_area = surroundings.area();
 
         let cross_neg =
-            *Query::new(self, surrounding_area).into_side(Cardinal::new(!command.axis, Negative));
+            *Query::new(self, surrounding_area).to_line(Cardinal::new(!command.axis, Negative));
 
         let cross_pos =
-            *Query::new(self, surrounding_area).into_side(Cardinal::new(!command.axis, Positive));
+            *Query::new(self, surrounding_area).to_line(Cardinal::new(!command.axis, Positive));
         self.update_connections(cross_neg);
         self.update_connections(cross_pos);
     }
