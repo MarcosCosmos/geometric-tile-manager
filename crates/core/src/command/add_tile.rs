@@ -1,5 +1,5 @@
 use crate::area::{Area, AreaQuery};
-use crate::command::transform::{Transform, TransformDetails, TransformInformation};
+use crate::command::transform::{Transform, TransformSurroundings, TransformInformation};
 use crate::command::transform::{TransformError, TransformQuery};
 use crate::command::{Command, RawCommandExecutor};
 use crate::context::QueryContext;
@@ -70,7 +70,7 @@ impl<B> TransformInformation for Query<'_, AddTile<Line, B>>
 where
     B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
 {
-    fn details(&self) -> Option<TransformDetails> {
+    fn surroundings(&self) -> Option<TransformSurroundings> {
         let destination = Query::new(self.context, self.destination);
         let surface_area = Query::<Area>::from(
             Query::<NodeId>::from(destination.into_end(Negative)).into_containing_surface(),
@@ -89,15 +89,15 @@ where
         // the rest of this is just normalising the above backward/forward parts to collapse intermediate Nones and arranged them in natural order
         if let Some(outward_fragment) = maybe_outward {
             if destination.side.sign == Positive {
-                Some(TransformDetails::Bidirectional(inward, outward_fragment))
+                Some(TransformSurroundings::Bidirectional(inward, outward_fragment))
             } else {
-                Some(TransformDetails::Bidirectional(outward_fragment, inward))
+                Some(TransformSurroundings::Bidirectional(outward_fragment, inward))
             }
         } else {
             if destination.side.sign == Positive {
-                Some(TransformDetails::Negative(inward))
+                Some(TransformSurroundings::Negative(inward))
             } else {
-                Some(TransformDetails::Positive(inward))
+                Some(TransformSurroundings::Positive(inward))
             }
         }
     }
@@ -199,15 +199,13 @@ where
     B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
     T: QueryContext<K>,
     for<'a> Query<'a, T::OutKey>: Into<Query<'a, Line>>,
-    for<'a> Query<'a, AddTile<Line, B>>: TryInto<Query<'a, AddTile>>,
-    for<'a> QueryError<K, T::Error, TransformError>:
-        From<T::Error> + From<<Query<'a, AddTile<Line, B>> as TryInto<Query<'a, AddTile>>>::Error>,
+    for<'a> Query<'a, AddTile<Line, B>>: TryInto<Query<'a, AddTile>, Error=TransformError>
 {
     type OutKey = AddTile;
 
-    type Error = KeyedError<AddTile<K, B>, QueryError<K, T::Error, TransformError>>;
+    type ErrorDetail = QueryError<K, T::ErrorDetail, TransformError>;
 
-    fn resolve(&self, key: AddTile<K, B>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+    fn resolve(&self, key: AddTile<K, B>) -> Result<Query<'_, Self::OutKey>, KeyedError<AddTile<K, B>, Self::ErrorDetail>> {
         (|| {
             let line: Line = *Into::<Query<Line>>::into(self.resolve(key.destination)?);
             Ok(
@@ -233,7 +231,7 @@ impl<'a> TryInto<Query<'a, AddTile>> for Query<'a, AddTile<Line, Auto>> {
             TryInto::<Query<NodeId>>::try_into(destination)
                 .unwrap()
                 .bounds()[destination.side.axis]
-        } else if let Some(details) = self.details() {
+        } else if let Some(details) = self.surroundings() {
             let (space, segment_count): (i32, i32) =
                 details.iter().fold((0, 0), |acc, segmented| {
                     (

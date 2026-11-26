@@ -362,14 +362,13 @@ impl<'a> AreaQuery for Query<'a, Area> {
 impl<T, Node> QueryContext<Area<Node>> for T
 where
     T: QueryContext<Node, OutKey = NodeId>,
-    Node: QueryKey,
-    QueryError<Node, <T as QueryContext<Node>>::Error, AreaProblem>: From<T::Error>,
+    Node: QueryKey
 {
     type OutKey = Area;
 
-    type Error = KeyedError<Area<Node>, QueryError<Node, T::Error, AreaProblem>>;
+    type ErrorDetail = QueryError<Node, T::ErrorDetail, AreaProblem>;
 
-    fn resolve(&self, key: Area<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+    fn resolve(&self, key: Area<Node>) -> Result<Query<'_, Self::OutKey>, KeyedError<Area<Node>, Self::ErrorDetail>> {
         (|| {
             Ok(Query::new(
                 self.as_ref(),

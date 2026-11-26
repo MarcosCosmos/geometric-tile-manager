@@ -40,12 +40,12 @@ impl IndexMut<Axis> for Coord {
 
 impl QueryContext<Coord> for Graph {
     type OutKey = NodeId;
-    type Error = KeyedError<Coord, NodeNotFound>;
+    type ErrorDetail = NodeNotFound;
 
     /// This method finds the node nearest to the given point, if any nodes (at all) exist.
     /// For points inside surfaces, it will prefer any tiles inside the surface over the surface itself,
     /// but it otherwise targets the nearest node in general.
-    fn resolve(&self, key: Coord) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+    fn resolve(&self, key: Coord) -> Result<Query<Self::OutKey>, KeyedError<Coord, Self::ErrorDetail>> {
         self.iter()
             .map(|node| {
                 let bounds = node.bounds();

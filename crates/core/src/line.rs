@@ -203,26 +203,6 @@ impl<'a> LineQuery for Query<'a, Line> {
         self.into_normalized()
     }
 
-    // /// expand the line's length as far as possible until a wall is reached (todo: add a limiting bounds?)
-    // /// may not keep this function inside core long term but, keeping the code around for now.
-    // /// actually it's simple enough now that I problem won't.
-    // fn into_expanded(self) -> Self {
-    //     self.with_nodes(
-    //         self
-    //             .into_end(Negative)
-    //             .into_iter(Negative)
-    //             .ids()
-    //             .last()
-    //             .unwrap_or(self[Negative]),
-    //         self
-    //             .into_end(Positive)
-    //             .into_iter(Positive)
-    //             .ids()
-    //             .last()
-    //             .unwrap_or(self[Positive])
-    //     )
-    // }
-
     /// Opposable as in is facing towards an opposing line.
     /// That is, a line with the same axis-bounds, on the inverse side of the opposing tile(s).
     fn into_opposable(self) -> Option<Self> {
@@ -374,15 +354,14 @@ impl Navigation for Query<'_, Line> {
 
 impl<T, Node> QueryContext<Line<Node>> for T
 where
-    T: QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    T: QueryContext<Node, OutKey = NodeId>,
     Node: QueryKey,
-    QueryError<Node, T::Error, LineProblem>: From<T::Error>,
 {
     type OutKey = Line;
 
-    type Error = KeyedError<Line<Node>, QueryError<Node, T::Error, LineProblem>>;
+    type ErrorDetail = QueryError<Node, T::ErrorDetail, LineProblem>;
 
-    fn resolve(&self, key: Line<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+    fn resolve(&self, key: Line<Node>) -> Result<Query<'_, Self::OutKey>, KeyedError<Line<Node>, Self::ErrorDetail>> {
         (|| {
             Ok(Query::new(
                 self.as_ref(),

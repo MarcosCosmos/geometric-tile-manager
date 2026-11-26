@@ -436,9 +436,9 @@ impl AsRef<Graph> for Graph {
 
 impl QueryContext<Uuid> for Graph {
     type OutKey = NodeId;
-    type Error = KeyedError<Uuid, NodeNotFound>;
+    type ErrorDetail = NodeNotFound;
 
-    fn resolve(&self, key: Uuid) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+    fn resolve(&self, key: Uuid) -> Result<Query<'_, Self::OutKey>, KeyedError<Uuid, Self::ErrorDetail>> {
         let id = NodeId(key);
         if !self.bounds.contains_key(&id) {
             Err(NodeNotFound).with_context(|_| KeyedSnafu { key })

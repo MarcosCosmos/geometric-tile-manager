@@ -1,5 +1,5 @@
 use crate::context::QueryContext;
-use crate::error::KeyedError;
+use crate::error::{KeyedError, KeyedSnafu};
 use crate::geometry::{Cardinal, LineBounds, Sign};
 use crate::graph::NodeId;
 use crate::key::QueryKey;
@@ -16,6 +16,7 @@ use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::iter::Map;
 use std::ops::Deref;
+use snafu::ResultExt;
 
 /// A caret is a position on the side of a node.
 /// they provide the step function for navigating along the gutter of carets parallel to them.
@@ -174,16 +175,16 @@ impl<T: ?Sized> CaretIterExt for T where T: Iterator<Item: Deref<Target = Caret>
 
 impl<T, Node> QueryContext<Caret<Node>> for T
 where
-    T: QueryContext<Node, OutKey = NodeId, Error = KeyedError<Node, NodeNotFound>>,
+    T: QueryContext<Node, OutKey = NodeId>,
     Node: QueryKey,
 {
     type OutKey = Caret;
-    type Error = KeyedError<Node, NodeNotFound>;
+    type ErrorDetail = KeyedError<Node, T::ErrorDetail>;
 
-    fn resolve(&self, key: Caret<Node>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+    fn resolve(&self, key: Caret<Node>) -> Result<Query<'_, Self::OutKey>, KeyedError<Caret<Node>, Self::ErrorDetail>> {
         Ok(Query::new(
             self.as_ref(),
-            Caret::new(*self.resolve(key.id)?, key.side),
+            Caret::new(*self.resolve(key.id).with_context(|_| KeyedSnafu { key })?, key.side),
         ))
     }
 }

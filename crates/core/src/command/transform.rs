@@ -81,44 +81,44 @@ impl SegmentedArea {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub enum TransformDetails {
+pub enum TransformSurroundings {
     Negative(SegmentedArea),
     Positive(SegmentedArea),
     Bidirectional(SegmentedArea, SegmentedArea),
 }
 
-impl TransformDetails {
+impl TransformSurroundings {
     pub fn part(&self, sign: Sign) -> Option<&SegmentedArea> {
         match (sign, self) {
-            (Negative, TransformDetails::Negative(fragment))
-            | (Positive, TransformDetails::Positive(fragment))
-            | (Negative, TransformDetails::Bidirectional(fragment, _))
-            | (Positive, TransformDetails::Bidirectional(_, fragment)) => Some(fragment),
+            (Negative, TransformSurroundings::Negative(fragment))
+            | (Positive, TransformSurroundings::Positive(fragment))
+            | (Negative, TransformSurroundings::Bidirectional(fragment, _))
+            | (Positive, TransformSurroundings::Bidirectional(_, fragment)) => Some(fragment),
             _ => None,
         }
     }
 
     pub fn parts(self) -> (Option<SegmentedArea>, Option<SegmentedArea>) {
         match self {
-            TransformDetails::Negative(neg) => (Some(neg), None),
-            TransformDetails::Positive(pos) => (None, Some(pos)),
-            TransformDetails::Bidirectional(neg, pos) => (Some(neg), Some(pos)),
+            TransformSurroundings::Negative(neg) => (Some(neg), None),
+            TransformSurroundings::Positive(pos) => (None, Some(pos)),
+            TransformSurroundings::Bidirectional(neg, pos) => (Some(neg), Some(pos)),
         }
     }
 
     pub fn parts_ref(&self) -> (Option<&SegmentedArea>, Option<&SegmentedArea>) {
         match self {
-            TransformDetails::Negative(neg) => (Some(neg), None),
-            TransformDetails::Positive(pos) => (None, Some(pos)),
-            TransformDetails::Bidirectional(neg, pos) => (Some(neg), Some(pos)),
+            TransformSurroundings::Negative(neg) => (Some(neg), None),
+            TransformSurroundings::Positive(pos) => (None, Some(pos)),
+            TransformSurroundings::Bidirectional(neg, pos) => (Some(neg), Some(pos)),
         }
     }
 
     pub fn area(&self) -> Area {
         match self {
-            TransformDetails::Negative(neg) => neg.area(),
-            TransformDetails::Positive(pos) => pos.area(),
-            TransformDetails::Bidirectional(neg, pos) => {
+            TransformSurroundings::Negative(neg) => neg.area(),
+            TransformSurroundings::Positive(pos) => pos.area(),
+            TransformSurroundings::Bidirectional(neg, pos) => {
                 let start = neg.segments.first().unwrap();
                 let end = pos.segments.last().unwrap();
                 match neg.axis {
@@ -144,7 +144,7 @@ impl TransformDetails {
     }
 }
 
-impl IntoIterator for TransformDetails {
+impl IntoIterator for TransformSurroundings {
     type Item = SegmentedArea;
     type IntoIter = TransformDetailIter<SegmentedArea>;
 
@@ -152,7 +152,7 @@ impl IntoIterator for TransformDetails {
         TransformDetailIter(self.parts())
     }
 }
-impl<'a> IntoIterator for &'a TransformDetails {
+impl<'a> IntoIterator for &'a TransformSurroundings {
     type Item = &'a SegmentedArea;
     type IntoIter = TransformDetailIter<&'a SegmentedArea>;
 
@@ -173,7 +173,7 @@ impl<T> Iterator for TransformDetailIter<T> {
 
 // todo: when we refactor XInformation traits into structs with derived provider traits, the existing TransformDetails will become that struct for transform queries.
 pub trait TransformInformation: Information + ElementInformation2D {
-    fn details(&self) -> Option<TransformDetails>;
+    fn surroundings(&self) -> Option<TransformSurroundings>;
 }
 
 #[derive(Debug, Snafu, ValidationError)]
@@ -208,7 +208,7 @@ impl ElementInformation2D for Query<'_, Transform> {
 }
 
 impl TransformInformation for Query<'_, Transform> {
-    fn details(&self) -> Option<TransformDetails> {
+    fn surroundings(&self) -> Option<TransformSurroundings> {
         let target = Query::new(self.context, self.target);
         let surface_area =
             Query::<Area>::from(target.into_corner(NORTH_WEST).into_containing_surface());
@@ -243,10 +243,10 @@ impl TransformInformation for Query<'_, Transform> {
         };
 
         match (maybe_negative, maybe_positive) {
-            (Some(negative), None) => Some(TransformDetails::Negative(negative)),
-            (None, Some(positive)) => Some(TransformDetails::Positive(positive)),
+            (Some(negative), None) => Some(TransformSurroundings::Negative(negative)),
+            (None, Some(positive)) => Some(TransformSurroundings::Positive(positive)),
             (Some(negative), Some(positive)) => {
-                Some(TransformDetails::Bidirectional(negative, positive))
+                Some(TransformSurroundings::Bidirectional(negative, positive))
             }
             (None, None) => None,
         }
@@ -311,15 +311,13 @@ where
     B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
     T: QueryContext<K, OutKey: QueryKey>,
     for<'a> Query<'a, T::OutKey>: Into<Query<'a, Area>>,
-    for<'a> Query<'a, Transform<Area, B>>: TryInto<Query<'a, Transform>>,
-    for<'a> QueryError<K, T::Error, TransformError>: From<T::Error>
-        + From<<Query<'a, Transform<Area, B>> as TryInto<Query<'a, Transform>>>::Error>,
+    for<'a> Query<'a, Transform<Area, B>>: TryInto<Query<'a, Transform>, Error=TransformError>
 {
     type OutKey = Transform;
 
-    type Error = KeyedError<Transform<K, B>, QueryError<K, T::Error, TransformError>>;
+    type ErrorDetail = QueryError<K, T::ErrorDetail, TransformError>;
 
-    fn resolve(&self, key: Transform<K, B>) -> Result<Query<'_, Self::OutKey>, Self::Error> {
+    fn resolve(&self, key: Transform<K, B>) -> Result<Query<'_, Self::OutKey>, KeyedError<Transform<K, B>, Self::ErrorDetail>> {
         (|| {
             let area: Area = *Into::<Query<Area>>::into(self.resolve(key.target)?);
             Ok(Query::new(
@@ -349,15 +347,15 @@ impl RawCommandExecutor<Transform> for Graph {
             Positive,
         );
 
-        let details = Query::new(self, command).details().unwrap();
-        if let Some(negative_area) = details.part(Negative) {
+        let surroundings = Query::new(self, command).surroundings().unwrap();
+        if let Some(negative_area) = surroundings.part(Negative) {
             let area = Query::new(self, negative_area.area());
             let mut new_bounds = area.bounds()[command.axis];
             new_bounds[Positive] = command.intended_bounds[Negative] - 1;
             let _side_line = *area.into_side(Cardinal::new(command.axis, Positive));
             self.transform_area(negative_area, new_bounds, Negative);
         }
-        if let Some(positive_area) = details.part(Negative) {
+        if let Some(positive_area) = surroundings.part(Negative) {
             let area = Query::new(self, positive_area.area());
             let mut new_bounds = area.bounds()[command.axis];
             new_bounds[Positive] = command.intended_bounds[Positive] + 1;
@@ -365,11 +363,13 @@ impl RawCommandExecutor<Transform> for Graph {
             self.transform_area(positive_area, new_bounds, Positive);
         }
 
+        let surrounding_area = surroundings.area();
+
         let cross_neg =
-            *Query::new(self, details.area()).into_side(Cardinal::new(!command.axis, Negative));
+            *Query::new(self, surrounding_area).into_side(Cardinal::new(!command.axis, Negative));
 
         let cross_pos =
-            *Query::new(self, details.area()).into_side(Cardinal::new(!command.axis, Positive));
+            *Query::new(self, surrounding_area).into_side(Cardinal::new(!command.axis, Positive));
         self.update_connections(cross_neg);
         self.update_connections(cross_pos);
     }

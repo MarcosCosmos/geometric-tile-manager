@@ -5,6 +5,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::error::Error;
 use std::fmt::Debug;
+use crate::error::KeyedError;
 
 mod add_surface;
 pub mod add_tile;
@@ -31,11 +32,11 @@ where
 
 pub trait CommandExecutor<Com>
 where
-    Com: Command,
+    Com: Command + QueryKey,
 {
     type Response: Serialize;
-    type Error: Error;
-    fn try_execute(&mut self, command: Com) -> Result<Self::Response, Self::Error>;
+    type ErrorDetail: Error + 'static;
+    fn try_execute(&mut self, command: Com) -> Result<Self::Response, KeyedError<Com, Self::ErrorDetail>>;
 }
 
 impl<Com, T> CommandExecutor<Com> for T
@@ -44,9 +45,9 @@ where
     T: QueryContext<Com, OutKey: Command> + RawCommandExecutor<T::OutKey>,
 {
     type Response = T::Response;
-    type Error = T::Error;
+    type ErrorDetail = T::ErrorDetail;
 
-    fn try_execute(&mut self, command: Com) -> Result<Self::Response, Self::Error> {
+    fn try_execute(&mut self, command: Com) -> Result<Self::Response, KeyedError<Com, Self::ErrorDetail>> {
         let out_com = *(*self).resolve(command)?;
         Ok(self.execute(out_com))
     }
