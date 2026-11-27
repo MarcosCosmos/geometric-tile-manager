@@ -1,5 +1,5 @@
 use crate::caret::Caret;
-use crate::command::transform::SegmentedArea;
+use crate::command::transform_area::SegmentedArea;
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu, QueryError, ValidationError};
 use crate::geometry::Axis::{Horizontal, Vertical};
@@ -8,15 +8,12 @@ use crate::geometry::{
     AreaBounds, AxisBounds, Cardinal, Diagonal, EAST, NORTH, NORTH_EAST, NORTH_WEST, SOUTH,
     SOUTH_EAST, SOUTH_WEST, WEST,
 };
-use crate::graph::NodeId;
+use crate::graph::{Graph, NodeId};
 use crate::iter::IterativeQueryNavigation;
 use crate::key::{QueryKey, query_impl};
 use crate::line::{Line, LineQuery};
 use crate::node::NodeQuery;
-use crate::query::{
-    ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GroupInformation,
-    Query,
-};
+use crate::query::{ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GraphQuery, GroupInformation, Query, Standardisation};
 use geotm_macros::{QueryKey, ValidationError};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
@@ -134,9 +131,6 @@ pub trait AreaQuery: ElementInformation2D {
         SegmentedArea::new(self.to_segments(start_side).collect(), start_side.axis)
     }
 
-    fn to_validated(self) -> Result<Self, AreaProblem>
-    where
-        Self::Target: Debug;
     fn to_segments(self, start_side: Cardinal) -> impl Iterator<Item = Area>;
     /// Constrain an area by updating one of its sides with a line.
     /// Useful for constraining selection areas e.g. delete selections cannot include the deleted tile, and generally need to start from a given line.
@@ -188,7 +182,7 @@ impl<'a> GroupInformation for Query<'a, Area> {
 }
 
 #[derive(Debug, Snafu, ValidationError)]
-pub enum AreaProblem {
+pub enum AreaError {
     #[snafu(display("An Area cannot span multiple surfaces"))]
     MultipleSurfaces,
     #[snafu(display("The following sides were in the wrong order: {bad_sides:?}"))]
@@ -223,28 +217,6 @@ impl<'a> AreaQuery for Query<'a, Area> {
 
     fn to_corner(self, corner: Diagonal) -> Self::NodeQuery {
         self.to(self[corner])
-    }
-
-    fn to_validated(self) -> Result<Self, AreaProblem> {
-        if [NORTH_WEST, NORTH_EAST, SOUTH_EAST, SOUTH_WEST]
-            .map(|diagonal| *self.to_corner(diagonal).to_surface())
-            .iter()
-            .collect::<HashSet<_>>()
-            .len()
-            != 1
-        {
-            Err(AreaProblem::MultipleSurfaces)
-        } else {
-            let bad_sides: Vec<Cardinal> = [WEST, NORTH, EAST, SOUTH]
-                .into_iter()
-                .filter(|&side| self.to_line(side).to_validated().is_err())
-                .collect();
-            if !bad_sides.is_empty() {
-                Err(AreaProblem::WrongOrder { bad_sides })
-            } else {
-                Ok(self)
-            }
-        }
     }
 
     /// Constrain an area by updating one of its sides with a line.
@@ -356,14 +328,40 @@ impl<'a> AreaQuery for Query<'a, Area> {
     }
 }
 
-impl<T, Node> QueryContext<Area<Node>> for T
+impl Standardisation for Query<'_, Area> {
+    type Error = AreaError;
+
+    fn to_validated(self) -> Result<Self, AreaError> {
+        if [NORTH_WEST, NORTH_EAST, SOUTH_EAST, SOUTH_WEST]
+            .map(|diagonal| *self.to_corner(diagonal).to_surface())
+            .iter()
+            .collect::<HashSet<_>>()
+            .len()
+            != 1
+        {
+            Err(AreaError::MultipleSurfaces)
+        } else {
+            let bad_sides: Vec<Cardinal> = [WEST, NORTH, EAST, SOUTH]
+                .into_iter()
+                .filter(|&side| self.to_line(side).to_validated().is_err())
+                .collect();
+            if !bad_sides.is_empty() {
+                Err(AreaError::WrongOrder { bad_sides })
+            } else {
+                Ok(self)
+            }
+        }
+    }
+}
+
+impl<Node> QueryContext<Area<Node>> for Graph
 where
-    T: QueryContext<Node, OutKey = NodeId>,
+    Self: QueryContext<Node, OutKey = NodeId>,
     Node: QueryKey,
 {
     type OutKey = Area;
 
-    type ErrorDetail = QueryError<Node, T::ErrorDetail, AreaProblem>;
+    type ErrorDetail = QueryError<Node, <Self as QueryContext<Node>>::ErrorDetail, AreaError>;
 
     fn resolve(
         &self,
@@ -371,7 +369,7 @@ where
     ) -> Result<Query<'_, Self::OutKey>, KeyedError<Area<Node>, Self::ErrorDetail>> {
         (|| {
             Ok(Query::new(
-                self.as_ref(),
+                self,
                 Area {
                     north_west: *self.resolve(key.north_west)?,
                     north_east: *self.resolve(key.north_east)?,

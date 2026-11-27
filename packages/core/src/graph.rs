@@ -1,6 +1,6 @@
 use crate::area::{Area, AreaQuery};
 use crate::caret::Caret;
-use crate::command::transform::SegmentedArea;
+use crate::command::transform_area::SegmentedArea;
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu};
 use crate::geometry::{
@@ -427,12 +427,6 @@ impl NeighbourIndexMut<NeighbourSurfaces> for Graph {
     }
 }
 
-impl AsRef<Graph> for Graph {
-    fn as_ref(&self) -> &Graph {
-        self
-    }
-}
-
 impl QueryContext<Uuid> for Graph {
     type OutKey = NodeId;
     type ErrorDetail = NodeNotFound;
@@ -447,5 +441,17 @@ impl QueryContext<Uuid> for Graph {
         } else {
             Ok(Query::new(self, id))
         }
+    }
+}
+
+impl QueryContext<NodeId> for Graph {
+    type OutKey = NodeId;
+    type ErrorDetail = <Self as QueryContext<Uuid>>::ErrorDetail;
+
+    fn resolve(
+        &self,
+        key: NodeId,
+    ) -> Result<Query<'_, Self::OutKey>, KeyedError<NodeId, Self::ErrorDetail>> {
+        Ok(self.resolve(key.0).map_err(|_| NodeNotFound).with_context(|_| KeyedSnafu { key })?)
     }
 }

@@ -3,14 +3,11 @@ use crate::caret::{Caret, CaretQuery};
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu, QueryError, ValidationError};
 use crate::geometry::{Cardinal, LineBounds, Sign, Sign::*};
-use crate::graph::NodeId;
-use crate::iter::IterativeQueryNavigation;
+use crate::graph::{Graph, NodeId};
+use crate::iter::{IterativeQueryNavigation, NavIter};
 use crate::key::QueryKey;
-use crate::node::NodeQuery;
-use crate::query::{
-    ElementInformation, ElementInformation1D, ElementKind, GroupInformation, Navigation,
-    NavigationMut, Query,
-};
+use crate::node::{NodeNotFound, NodeQuery};
+use crate::query::{ElementInformation, ElementInformation1D, ElementKind, GraphQuery, GroupInformation, Navigation, NavigationMut, Query, Standardisation};
 use crate::query_impl;
 use geotm_macros::{QueryKey, ValidationError};
 use serde::{Deserialize, Serialize};
@@ -86,15 +83,15 @@ pub trait LineQuery: ElementInformation1D + Deref<Target = Line> {
     type AreaQuery: AreaQuery;
     fn to_end(self, sign: Sign) -> Self::CaretQuery;
 
-    /// checks and gaurantees that the ends of the line are arranged in normalised (Negative < Positive) order along the axis between them.
-    /// note that this can result in them being converted into a line over a single caret if one subsumes the other
-    fn to_normalized(self) -> Self;
-    fn to_validated(self) -> Result<Self, LineProblem>;
     fn to_opposable(self) -> Option<Self>;
     fn to_opposing(self) -> Option<Self>;
     /// This method finds the line that includes at least one of the existing ends but where both ends have the same `bounds().side_location`, if any exists.
     /// It will use given sign to choose which direction to scan towards.
     fn to_straightened(self, direction: Sign) -> Option<Self>;
+
+    /// scans in the opposite direction of the current line, and is generally likely to produce an area as long as F returns something
+    fn to_area<F>(self, f: F) -> Option<Self::AreaQuery>
+    where F : FnOnce(NavIter<Query<Line>>) -> Option<Query<Line>>;
 }
 
 pub trait LineNavigationMut: NavigationMut + Deref<Target = Line> {
@@ -140,19 +137,15 @@ impl<'a> GroupInformation for Query<'a, Line> {
 
 // todo later: implement nested key swapping reverse engineer the input that corresponded to each error.
 #[derive(Debug, Snafu, ValidationError)]
-pub enum LineProblem {
+pub enum LineError {
     /// A Line cannot span multiple surfaces
     MultipleSurfaces,
     /// The ends of the line are arranged in the wrong order
     WrongOrder,
 }
 
-impl<'a> LineQuery for Query<'a, Line> {
-    type CaretQuery = Query<'a, Caret>;
-    type AreaQuery = Query<'a, Area>;
-    fn to_end(self, sign: Sign) -> Self::CaretQuery {
-        self.to(Caret::new(self[sign], self.side))
-    }
+impl<'a> Standardisation for Query<'a, Line> {
+    type Error = LineError;
 
     fn to_normalized(mut self) -> Self {
         if self.to_end(Negative).bounds().side_location
@@ -165,20 +158,30 @@ impl<'a> LineQuery for Query<'a, Line> {
         self
     }
 
-    fn to_validated(self) -> Result<Self, LineProblem> {
+    /// checks and gaurantees that the ends of the line are arranged in normalised (Negative < Positive) order along the axis between them.
+    /// note that this can result in them being converted into a line over a single caret if one subsumes the other
+    fn to_validated(self) -> Result<Self, LineError> {
         let neg = self.to_end(Negative);
         let pos = self.to_end(Positive);
         if Query::<NodeId>::from(neg).to_surface().deref()
             != Query::<NodeId>::from(pos).to_surface().deref()
         {
-            Err(LineProblem::MultipleSurfaces)
+            Err(LineError::MultipleSurfaces)
         } else if self.to_end(Negative).bounds().side_location
             > self.to_end(Positive).bounds().side_location
         {
-            Err(LineProblem::WrongOrder)
+            Err(LineError::WrongOrder)
         } else {
             Ok(self)
         }
+    }
+}
+
+impl<'a> LineQuery for Query<'a, Line> {
+    type CaretQuery = Query<'a, Caret>;
+    type AreaQuery = Query<'a, Area>;
+    fn to_end(self, sign: Sign) -> Self::CaretQuery {
+        self.to(Caret::new(self[sign], self.side))
     }
 
     /// Opposable as in is facing towards an opposing line.
@@ -250,6 +253,13 @@ impl<'a> LineQuery for Query<'a, Line> {
             }
             _ => None,
         }
+    }
+
+    fn to_area<F>(self, f: F) -> Option<Self::AreaQuery>
+        where F : FnOnce(NavIter<Query<Line>>) -> Option<Query<Line>> {
+        let opp = f(self.to_iter(!self.side.sign))?;
+        let base_area: Query<Area> = self.to_end(Negative).to_node().into();
+        Some(base_area.with_side(*self).with_side(*opp))
     }
 }
 
@@ -342,14 +352,14 @@ impl Navigation for Query<'_, Line> {
     }
 }
 
-impl<T, Node> QueryContext<Line<Node>> for T
+impl<Node> QueryContext<Line<Node>> for Graph
 where
-    T: QueryContext<Node, OutKey = NodeId>,
+    Graph: QueryContext<Node, OutKey = NodeId>,
     Node: QueryKey,
 {
     type OutKey = Line;
 
-    type ErrorDetail = QueryError<Node, T::ErrorDetail, LineProblem>;
+    type ErrorDetail = QueryError<Node, <Self as QueryContext<Node>>::ErrorDetail, LineError>;
 
     fn resolve(
         &self,
@@ -357,7 +367,7 @@ where
     ) -> Result<Query<'_, Self::OutKey>, KeyedError<Line<Node>, Self::ErrorDetail>> {
         (|| {
             Ok(Query::new(
-                self.as_ref(),
+                self,
                 Line::new(
                     *self.resolve(key[Negative])?,
                     *self.resolve(key[Positive])?,

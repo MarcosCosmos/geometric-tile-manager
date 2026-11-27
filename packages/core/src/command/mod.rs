@@ -6,10 +6,11 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::error::Error;
 use std::fmt::Debug;
+use crate::graph::Graph;
 
-mod add_surface;
+pub mod add_surface;
 pub mod add_tile;
-pub mod transform;
+pub mod transform_area;
 
 pub trait Command: Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned {}
 
@@ -42,18 +43,18 @@ where
     ) -> Result<Self::Response, KeyedError<Com, Self::ErrorDetail>>;
 }
 
-impl<Com, T> CommandExecutor<Com> for T
+impl<C> CommandExecutor<C> for Graph
 where
-    Com: Command + QueryKey,
-    T: QueryContext<Com, OutKey: Command> + RawCommandExecutor<T::OutKey>,
+    C: Command + QueryKey,
+    Self: QueryContext<C, OutKey: Command> + RawCommandExecutor<<Self as QueryContext<C>>::OutKey>,
 {
-    type Response = T::Response;
-    type ErrorDetail = T::ErrorDetail;
+    type Response = <Self as RawCommandExecutor<<Self as QueryContext<C>>::OutKey>>::Response;
+    type ErrorDetail = <Self as QueryContext<C>>::ErrorDetail;
 
     fn try_execute(
         &mut self,
-        command: Com,
-    ) -> Result<Self::Response, KeyedError<Com, Self::ErrorDetail>> {
+        command: C,
+    ) -> Result<Self::Response, KeyedError<C, Self::ErrorDetail>> {
         let out_com = *(*self).resolve(command)?;
         Ok(self.execute(out_com))
     }

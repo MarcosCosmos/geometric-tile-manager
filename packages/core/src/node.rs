@@ -5,7 +5,7 @@ use crate::geometry::{AreaBounds, Cardinal, NORTH_EAST, NORTH_WEST, SOUTH_EAST, 
 use crate::graph::NodeId;
 use crate::key::QueryKey;
 use crate::line::Line;
-use crate::query::{ElementInformation, ElementInformation2D, ElementKind, Query};
+use crate::query::{ElementInformation, ElementInformation2D, ElementKind, GraphQuery, Query};
 use crate::query_impl;
 use snafu::{Snafu, ensure};
 use std::fmt::Debug;

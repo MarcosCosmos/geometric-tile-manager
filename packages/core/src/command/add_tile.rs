@@ -1,6 +1,6 @@
 use crate::area::{Area, AreaQuery};
-use crate::command::transform::{Transform, TransformInformation, TransformSurroundings};
-use crate::command::transform::{TransformError, TransformQuery};
+use crate::command::transform_area::{TransformArea, TransformInformation, TransformSurroundings};
+use crate::command::transform_area::{TransformError};
 use crate::command::{Command, RawCommandExecutor};
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu, QueryError};
@@ -11,7 +11,7 @@ use crate::iter::IterativeQueryNavigation;
 use crate::key::QueryKey;
 use crate::line::{Line, LineQuery};
 use crate::node::NodeQuery;
-use crate::query::{ElementInformation, ElementKind, GroupInformation, Navigation, Query};
+use crate::query::{ElementInformation, ElementKind, GraphQuery, GroupInformation, Navigation, Query, Standardisation};
 use crate::query::{ElementInformation1D, ElementInformation2D};
 use geotm_macros::QueryKey;
 use serde::de::DeserializeOwned;
@@ -25,7 +25,6 @@ use std::fmt::Debug;
 /// It has the loosest requirements: only that there is some non-zero area in the row/column around the line.
 /// Unlike other selections, it will never expand the selection line.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey, Command)]
-#[node(<K as QueryKey>::NodeKey)]
 pub struct AddTile<K = Line, B = AxisBounds>
 where
     K: QueryKey,
@@ -108,14 +107,15 @@ where
     }
 }
 
-impl TransformQuery for Query<'_, AddTile> {
-    fn into_validated(self) -> Result<Self, TransformError> {
+impl Standardisation for Query<'_, AddTile> {
+    type Error = TransformError;
+    fn to_validated(self) -> Result<Self, TransformError> {
         let destination = self.to(self.destination);
-        let surface_area =
-            Query::<Area>::from(Query::<NodeId>::from(destination.to_end(Negative)).to_surface());
         if !destination.is_connected() {
             Err(TransformError::NotConnected)?
         }
+        let surface_area =
+            Query::<Area>::from(Query::<NodeId>::from(destination.to_end(Negative)).to_surface());
 
         if self.kind() == ElementKind::Surface && destination.peek(!destination.side.sign).is_some()
         {
@@ -181,7 +181,7 @@ impl TransformQuery for Query<'_, AddTile> {
         Ok(self)
     }
 
-    fn into_normalized(mut self) -> Self {
+    fn to_normalized(mut self) -> Self {
         let destination = self.to(self.destination);
         if self.kind() == ElementKind::Surface
             && let Some(tile_line) = destination.peek(!destination.side.sign)
@@ -197,71 +197,29 @@ impl TransformQuery for Query<'_, AddTile> {
     }
 }
 
-impl<K, B, T> QueryContext<AddTile<K, B>> for T
+impl<K> QueryContext<AddTile<K>> for Graph
 where
     K: QueryKey,
-    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
-    T: QueryContext<K>,
-    for<'a> Query<'a, T::OutKey>: Into<Query<'a, Line>>,
-    for<'a> Query<'a, AddTile<Line, B>>: TryInto<Query<'a, AddTile>, Error = TransformError>,
+    Self: QueryContext<K>,
+    for<'a> Query<'a, <Self as QueryContext<K>>::OutKey>: Into<Query<'a, Line>>
 {
     type OutKey = AddTile;
 
-    type ErrorDetail = QueryError<K, T::ErrorDetail, TransformError>;
+    type ErrorDetail = QueryError<K, <Self as QueryContext<K>>::ErrorDetail, TransformError>;
 
     fn resolve(
         &self,
-        key: AddTile<K, B>,
-    ) -> Result<Query<'_, Self::OutKey>, KeyedError<AddTile<K, B>, Self::ErrorDetail>> {
+        key: AddTile<K>,
+    ) -> Result<Query<'_, Self::OutKey>, KeyedError<AddTile<K>, Self::ErrorDetail>> {
         (|| {
             let line: Line = *Into::<Query<Line>>::into(self.resolve(key.destination)?);
             Ok(
-                Query::new(self.as_ref(), AddTile::new(line, key.intended_bounds))
-                    .try_into()?
-                    .into_normalized()
-                    .into_validated()?,
+                Query::new(self, AddTile::new(line, key.intended_bounds))
+                    .to_normalized()
+                    .to_validated()?,
             )
         })()
         .with_context(|_| KeyedSnafu { key })
-    }
-}
-
-/// todo: will probably move extras like this into a utils crate; It will be OK with the orphaning rules as long as Auto is owned in util.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-struct Auto;
-impl<'a> TryInto<Query<'a, AddTile>> for Query<'a, AddTile<Line, Auto>> {
-    type Error = TransformError;
-
-    fn try_into(self) -> Result<Query<'a, AddTile>, Self::Error> {
-        let destination = self.to(self.destination);
-        let bounds = if destination.kind() == ElementKind::Surface {
-            TryInto::<Query<NodeId>>::try_into(destination)
-                .unwrap()
-                .bounds()[destination.side.axis]
-        } else if let Some(details) = self.surroundings() {
-            let (space, segment_count): (i32, i32) =
-                details.iter().fold((0, 0), |acc, segmented| {
-                    (
-                        acc.0
-                            + segmented
-                                .segments
-                                .iter()
-                                .map(|&area| self.to(area).bounds()[destination.side.axis].extent())
-                                .sum::<i32>(),
-                        acc.1 + (segmented.segments.len() as i32),
-                    )
-                });
-
-            let half_new_size = (space / (segment_count + 1)) / 2;
-            let location = destination.bounds().side_location;
-            AxisBounds::new(location - half_new_size, location + half_new_size)
-        } else {
-            Err(TransformError::IncompatibleSurroundings)?
-        };
-        Ok(self.to(AddTile {
-            destination: self.destination,
-            intended_bounds: bounds,
-        }))
     }
 }
 
@@ -289,7 +247,7 @@ impl RawCommandExecutor<AddTile> for Graph {
             self.replace_connections(opposing, Line::new(id, id, command.destination.side));
         }
 
-        self.execute(Transform::new(
+        self.execute(TransformArea::new(
             Area::from(id),
             command.destination.side.axis,
             command.intended_bounds,

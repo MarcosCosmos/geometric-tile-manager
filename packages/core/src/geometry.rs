@@ -174,8 +174,8 @@ impl From<LineBounds> for AreaBounds {
     fn from(value: LineBounds) -> Self {
         let narrow_bounds = AxisBounds::new(value.side_location, value.side_location);
         match value.side.axis {
-            Horizontal => AreaBounds::new(value.axis_bounds, narrow_bounds),
-            Vertical => AreaBounds::new(narrow_bounds, value.axis_bounds),
+            Horizontal => AreaBounds::new(narrow_bounds, value.axis_bounds),
+            Vertical => AreaBounds::new(value.axis_bounds, narrow_bounds),
         }
     }
 }

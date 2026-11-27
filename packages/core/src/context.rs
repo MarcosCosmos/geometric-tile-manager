@@ -6,8 +6,7 @@ use std::error::Error;
 
 pub trait QueryContext<K>
 where
-    K: QueryKey,
-    Self: AsRef<Graph>,
+    K: QueryKey
 {
     type OutKey: QueryKey;
     type ErrorDetail: Error + 'static;

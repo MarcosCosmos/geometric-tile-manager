@@ -13,10 +13,7 @@ use crate::iter::IterativeQueryNavigation;
 use crate::key::QueryKey;
 use crate::line::LineQuery;
 use crate::node::NodeQuery;
-use crate::query::{
-    ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GraphQuery,
-    GroupInformation, Information, Query,
-};
+use crate::query::{ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GraphQuery, GroupInformation, Information, Query, Standardisation};
 use geotm_macros::{QueryKey, ValidationError};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -25,7 +22,7 @@ use std::fmt::Debug;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey, Command)]
 #[node(K::NodeKey)]
-pub struct Transform<K = Area, B = AxisBounds>
+pub struct TransformArea<K = Area, B = AxisBounds>
 where
     K: QueryKey,
     B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
@@ -35,7 +32,7 @@ where
     pub intended_bounds: B,
 }
 
-impl<K, B> Transform<K, B>
+impl<K, B> TransformArea<K, B>
 where
     K: QueryKey,
     B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
@@ -188,26 +185,19 @@ pub enum TransformError {
     InsufficientSpace,
 }
 
-pub trait TransformQuery: GraphQuery + TransformInformation {
-    fn into_validated(self) -> Result<Self, TransformError>;
-
-    /// this will vary by command, but for one thing it will generally mean that guide elements that refer to a surface will be shifted to corresponding corners
-    fn into_normalized(self) -> Self;
-}
-
-impl ElementInformation for Query<'_, Transform> {
+impl ElementInformation for Query<'_, TransformArea> {
     fn kind(&self) -> ElementKind {
         self.to(self.target).kind()
     }
 }
 
-impl ElementInformation2D for Query<'_, Transform> {
+impl ElementInformation2D for Query<'_, TransformArea> {
     fn bounds(&self) -> AreaBounds {
         self.to(self.target).bounds()
     }
 }
 
-impl TransformInformation for Query<'_, Transform> {
+impl TransformInformation for Query<'_, TransformArea> {
     fn surroundings(&self) -> Option<TransformSurroundings> {
         let target = self.to(self.target);
         let surface_area = Query::<Area>::from(target.to_corner(NORTH_WEST).to_surface());
@@ -244,8 +234,30 @@ impl TransformInformation for Query<'_, Transform> {
     }
 }
 
-impl TransformQuery for Query<'_, Transform> {
-    fn into_validated(self) -> Result<Self, TransformError> {
+impl Standardisation for Query<'_, TransformArea> {
+
+    type Error = TransformError;
+
+    fn to_normalized(mut self) -> Self {
+        let mut target = self.to(self.target);
+
+        let initial_bounds = self.bounds()[self.axis];
+        for sign in [Negative, Positive] {
+            if self.intended_bounds[sign] != initial_bounds[sign] {
+                let direction = Cardinal::new(self.axis, sign);
+                // todo: this can probably be improved by outscanning in a more complex way but for now it's not that important.
+                if let Some(updated_side) = target.to_line(direction).to_opposable() {
+                    target = target.with_side(*updated_side);
+                }
+            }
+        }
+
+        self.target = *target;
+
+        self
+    }
+
+    fn to_validated(self) -> Result<Self, TransformError> {
         let target = self.to(self.target);
         if !target.is_connected() {
             Err(TransformError::NotConnected)?
@@ -273,61 +285,39 @@ impl TransformQuery for Query<'_, Transform> {
 
         Ok(self)
     }
-
-    fn into_normalized(mut self) -> Self {
-        let mut target = self.to(self.target);
-
-        let initial_bounds = self.bounds()[self.axis];
-        for sign in [Negative, Positive] {
-            if self.intended_bounds[sign] != initial_bounds[sign] {
-                let direction = Cardinal::new(self.axis, sign);
-                // todo: this can probably be improved by outscanning in a more complex way but for now it's not that important.
-                if let Some(updated_side) = target.to_line(direction).to_opposable() {
-                    target = target.with_side(*updated_side);
-                }
-            }
-        }
-
-        self.target = *target;
-
-        self
-    }
 }
 
-impl<K, B, T> QueryContext<Transform<K, B>> for T
+impl<K> QueryContext<TransformArea<K>> for Graph
 where
     K: QueryKey,
-    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
-    T: QueryContext<K, OutKey: QueryKey>,
-    for<'a> Query<'a, T::OutKey>: Into<Query<'a, Area>>,
-    for<'a> Query<'a, Transform<Area, B>>: TryInto<Query<'a, Transform>, Error = TransformError>,
+    Self: QueryContext<K>,
+    for<'a> Query<'a, <Self as QueryContext<K>>::OutKey>: Into<Query<'a, Area>>,
 {
-    type OutKey = Transform;
+    type OutKey = TransformArea;
 
-    type ErrorDetail = QueryError<K, T::ErrorDetail, TransformError>;
+    type ErrorDetail = QueryError<K, <Self as QueryContext<K>>::ErrorDetail, TransformError>;
 
     fn resolve(
         &self,
-        key: Transform<K, B>,
-    ) -> Result<Query<'_, Self::OutKey>, KeyedError<Transform<K, B>, Self::ErrorDetail>> {
+        key: TransformArea<K>,
+    ) -> Result<Query<'_, Self::OutKey>, KeyedError<TransformArea<K>, Self::ErrorDetail>> {
         (|| {
             let area: Area = *Into::<Query<Area>>::into(self.resolve(key.target)?);
             Ok(Query::new(
-                self.as_ref(),
-                Transform::new(area, key.axis, key.intended_bounds),
+                self,
+                TransformArea::new(area, key.axis, key.intended_bounds),
             )
-            .try_into()?
-            .into_normalized()
-            .into_validated()?)
+            .to_normalized()
+            .to_validated()?)
         })()
         .with_context(|_| KeyedSnafu { key })
     }
 }
 
-impl RawCommandExecutor<Transform> for Graph {
+impl RawCommandExecutor<TransformArea> for Graph {
     type Response = ();
 
-    fn execute(&mut self, command: Transform) -> Self::Response {
+    fn execute(&mut self, command: TransformArea) -> Self::Response {
         if let Ok(node) = NodeId::try_from(command.target) {
             self.transform_node(node, command.axis, command.intended_bounds, Positive);
             return;

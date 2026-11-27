@@ -1,11 +1,11 @@
 use crate::caret::{Caret, CaretQuery};
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu};
-use crate::graph::NodeId;
+use crate::graph::{Graph, NodeId};
 use crate::iter::QueryIter;
 use crate::key::{QueryKey, query_impl};
 use crate::node::NodeQuery;
-use crate::query::{ElementInformation, ElementKind, GraphQuery, Query};
+use crate::query::{ElementInformation, ElementKind, GraphQuery, Query, Standardisation};
 use geotm_macros::QueryKey;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
@@ -104,6 +104,12 @@ impl ElementInformation for Query<'_, Neighbours> {
     }
 }
 
+impl<'a, T> Standardisation for Query<'a, T>
+where
+    T: QueryKey + Into<Caret>,
+    Self: IntoIterator<Item = Query<'a, NodeId>, IntoIter: DoubleEndedIterator>,
+{ type Error = !; }
+
 impl<'a, T> NeighbourhoodQuery for Query<'a, T>
 where
     T: QueryKey + Into<Caret>,
@@ -153,13 +159,13 @@ where
     }
 }
 
-impl<T, Node> QueryContext<NeighbourTiles<Node>> for T
+impl<Node> QueryContext<NeighbourTiles<Node>> for Graph
 where
-    T: QueryContext<Node, OutKey = NodeId>,
+    Self: QueryContext<Node, OutKey = NodeId>,
     Node: QueryKey,
 {
     type OutKey = NeighbourTiles;
-    type ErrorDetail = KeyedError<Node, T::ErrorDetail>;
+    type ErrorDetail = KeyedError<Node, <Self as QueryContext<Node>>::ErrorDetail>;
 
     fn resolve(
         &self,
@@ -167,7 +173,7 @@ where
     ) -> Result<Query<'_, Self::OutKey>, KeyedError<NeighbourTiles<Node>, Self::ErrorDetail>> {
         let caret: Caret<Node> = key.into();
         Ok(Query::new(
-            self.as_ref(),
+            self,
             NeighbourTiles(Caret::new(
                 *self
                     .resolve(caret.id)
@@ -178,13 +184,13 @@ where
     }
 }
 
-impl<T, Node> QueryContext<NeighbourSurfaces<Node>> for T
+impl<Node> QueryContext<NeighbourSurfaces<Node>> for Graph
 where
-    T: QueryContext<Node, OutKey = NodeId>,
+    Self: QueryContext<Node, OutKey = NodeId>,
     Node: QueryKey,
 {
     type OutKey = NeighbourSurfaces;
-    type ErrorDetail = KeyedError<Node, T::ErrorDetail>;
+    type ErrorDetail = KeyedError<Node, <Self as QueryContext<Node>>::ErrorDetail>;
 
     fn resolve(
         &self,
@@ -193,7 +199,7 @@ where
     {
         let caret: Caret<Node> = key.into();
         Ok(Query::new(
-            self.as_ref(),
+            self,
             NeighbourSurfaces(Caret::new(
                 *self
                     .resolve(caret.id)

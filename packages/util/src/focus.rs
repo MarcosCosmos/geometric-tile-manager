@@ -5,19 +5,19 @@ use geotm_core::geometry::{Axis, Cardinal};
 use geotm_core::graph::{Graph, NodeId};
 use geotm_core::neighbours::{NeighbourSurfaces, NeighbourTiles, Neighbours};
 use geotm_core::node::NodeQuery;
-use geotm_core::query::{
-    ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, Navigation,
-    NavigationMut, Query,
-};
+use geotm_core::query::{ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GraphQuery, Navigation, NavigationMut, Query};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Deref;
 use uuid::Uuid;
 
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct HistoryCursor {
     coord: Coord,
     axis: Axis,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FocusState {
     target: Option<Caret>,
     cursors: HashMap<NodeId, HistoryCursor>,
@@ -125,7 +125,9 @@ impl Navigation for FocusNavigator<'_, '_> {
                         if let Some(node) = immediate.into_iter().next()
                             && node.kind() == ElementKind::Surface
                         {
-                            current.to(NeighbourSurfaces(*node.to_caret(direction))).into()
+                            current
+                                .to(NeighbourSurfaces(*node.to_caret(direction)))
+                                .into()
                         } else {
                             immediate.into()
                         }
@@ -134,12 +136,12 @@ impl Navigation for FocusNavigator<'_, '_> {
                 };
                 match *prelims {
                     Neighbours::Surfaces(_)
-                        if let Some(next_surface) = prelims
-                            .into_iter()
-                            .min_by_key(|node| node.bounds()[axis].distance_to(historical_location))
-                            =>
+                        if let Some(next_surface) = prelims.into_iter().min_by_key(|node| {
+                            node.bounds()[axis].distance_to(historical_location)
+                        }) =>
                     {
-                        let distant = next_surface.to(NeighbourTiles(*next_surface.to_caret(direction)));
+                        let distant =
+                            next_surface.to(NeighbourTiles(*next_surface.to_caret(direction)));
                         if distant
                             .into_iter()
                             .any(|node| node.kind() == ElementKind::Tile)

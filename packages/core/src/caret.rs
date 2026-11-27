@@ -1,15 +1,12 @@
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu};
 use crate::geometry::{Cardinal, LineBounds, Sign};
-use crate::graph::NodeId;
+use crate::graph::{Graph, NodeId};
 use crate::key::QueryKey;
 use crate::line::Line;
 use crate::neighbours::{NeighbourSurfaces, NeighbourTiles, Neighbours};
 use crate::node::{NodeQuery, TooManyNodesError};
-use crate::query::{
-    ElementInformation, ElementInformation1D, ElementKind, Navigation, NavigationMut,
-    Query,
-};
+use crate::query::{ElementInformation, ElementInformation1D, ElementKind, GraphQuery, Navigation, NavigationMut, Query};
 use crate::query_impl;
 use geotm_macros::QueryKey;
 use serde::{Deserialize, Serialize};
@@ -161,20 +158,20 @@ where
 
 impl<T: ?Sized> CaretIterExt for T where T: Iterator<Item: Deref<Target = Caret>> {}
 
-impl<T, Node> QueryContext<Caret<Node>> for T
+impl<Node> QueryContext<Caret<Node>> for Graph
 where
-    T: QueryContext<Node, OutKey = NodeId>,
+    Self: QueryContext<Node, OutKey = NodeId>,
     Node: QueryKey,
 {
     type OutKey = Caret;
-    type ErrorDetail = KeyedError<Node, T::ErrorDetail>;
+    type ErrorDetail = KeyedError<Node, <Self as QueryContext<Node>>::ErrorDetail>;
 
     fn resolve(
         &self,
         key: Caret<Node>,
     ) -> Result<Query<'_, Self::OutKey>, KeyedError<Caret<Node>, Self::ErrorDetail>> {
         Ok(Query::new(
-            self.as_ref(),
+            self,
             Caret::new(
                 *self.resolve(key.id).with_context(|_| KeyedSnafu { key })?,
                 key.side,

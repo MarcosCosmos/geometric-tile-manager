@@ -3,6 +3,10 @@ use crate::graph::{Graph, NodeId};
 use crate::key::QueryKey;
 use std::cmp::Ordering;
 use std::ops::{Deref, DerefMut, Not};
+use crate::error::ValidationError;
+use crate::geometry::Sign::{Negative, Positive};
+use crate::line::LineError;
+use crate::node::NodeQuery;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ElementKind {
@@ -11,8 +15,24 @@ pub enum ElementKind {
     Mixed,
 }
 
+pub trait Standardisation: Sized {
+    type Error;
+    fn to_normalized(self) -> Self {
+        self
+    }
+
+    fn to_validated(self) -> Result<Self, Self::Error> {
+        Ok(self)
+    }
+}
+
 // todo: add serialisation requirement to output the results once other testing has started.
-pub trait GraphQuery: Deref<Target: QueryKey> + DerefMut + Sized {}
+pub trait GraphQuery: Deref<Target: QueryKey> + DerefMut + Sized {
+    type Holder<Q>: GraphQuery where Q: QueryKey;
+    fn to<Q>(self, key: Q) -> Self::Holder<Q>
+    where
+        Q: QueryKey;
+}
 
 pub trait Information: Deref<Target: QueryKey> + Sized {}
 
@@ -78,12 +98,6 @@ where
     pub fn new(context: &'a Graph, key: K) -> Self {
         Self { context, key }
     }
-    pub fn to<Q>(self, key: Q) -> Query<'a, Q>
-    where
-        Q: QueryKey,
-    {
-        self.to(key)
-    }
 }
 
 impl<K> Deref for Query<'_, K>
@@ -106,7 +120,17 @@ where
     }
 }
 
-impl<'a, K> GraphQuery for Query<'a, K> where K: QueryKey {}
+impl <'a, K> GraphQuery for Query<'a, K>
+    where K: QueryKey {
+    type Holder<Q> = Query<'a, Q> where Q: QueryKey;
+
+    fn to<Q>(self, key: Q) -> Self::Holder<Q>
+    where
+        Q: QueryKey,
+    {
+        Query::new(self.context, key)
+    }
+}
 impl<'a, K> Information for Query<'a, K> where K: QueryKey {}
 
 impl<'a, K> GroupQuery for Query<'a, K>

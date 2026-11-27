@@ -1,8 +1,11 @@
 use crate::key::QueryKey;
 use snafu::Snafu;
 use std::error::Error;
+use std::panic::panic_any;
 
 pub trait ValidationError: Error {}
+
+impl ValidationError for ! {}
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
