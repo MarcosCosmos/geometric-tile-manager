@@ -3,19 +3,29 @@ use geotm_core::error::{KeyedError, KeyedSnafu};
 use geotm_core::geometry::Axis;
 use geotm_core::geometry::Axis::{Horizontal, Vertical};
 use geotm_core::graph::{Graph, NodeId};
+use geotm_core::key::NodeKey;
 use geotm_core::key::QueryKey;
 use geotm_core::node::{NodeNotFound, NodeQuery};
 use geotm_core::query::{ElementInformation, ElementInformation2D, ElementKind, Query};
-use geotm_macros::QueryKey;
+use geotm_macros::{NodeKey, QueryKey};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use std::cmp::Ordering;
+use std::fmt::{Display, Formatter};
 use std::ops::{Deref, Index, IndexMut};
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, QueryKey)]
+#[derive(
+    Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, QueryKey, NodeKey,
+)]
 pub struct Coord {
     pub x: i32,
     pub y: i32,
+}
+
+impl Display for Coord {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<{},{}>", self.x, self.y)
+    }
 }
 
 impl Index<Axis> for Coord {

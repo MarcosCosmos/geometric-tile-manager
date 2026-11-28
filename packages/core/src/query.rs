@@ -1,18 +1,28 @@
+use crate::area::{Area, AreaQuery};
+use crate::caret::{Caret, CaretQuery};
+use crate::error::ValidationError;
+use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{AreaBounds, LineBounds};
 use crate::graph::{Graph, NodeId};
 use crate::key::QueryKey;
-use std::cmp::Ordering;
-use std::ops::{Deref, DerefMut, Not};
-use crate::error::ValidationError;
-use crate::geometry::Sign::{Negative, Positive};
-use crate::line::LineError;
+use crate::line::{Line, LineError, LineQuery};
+use crate::neighbours::{NeighbourSurfaces, NeighbourTiles, NeighbourhoodQuery, Neighbours};
 use crate::node::NodeQuery;
+use std::cmp::Ordering;
+use std::fmt::{Debug, Display, Formatter};
+use std::ops::{Deref, DerefMut, Not};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ElementKind {
     Tile,
     Surface,
     Mixed,
+}
+
+impl Display for ElementKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(self, f)
+    }
 }
 
 pub trait Standardisation: Sized {
@@ -27,9 +37,11 @@ pub trait Standardisation: Sized {
 }
 
 // todo: add serialisation requirement to output the results once other testing has started.
-pub trait GraphQuery: Deref<Target: QueryKey> + DerefMut + Sized {
-    type Holder<Q>: GraphQuery where Q: QueryKey;
-    fn to<Q>(self, key: Q) -> Self::Holder<Q>
+pub trait GraphQuery: Deref<Target: QueryKey> + DerefMut + Sized + Copy {
+    type Query<Q>: GraphQuery
+    where
+        Q: QueryKey;
+    fn to<Q>(self, key: Q) -> Self::Query<Q>
     where
         Q: QueryKey;
 }
@@ -52,9 +64,7 @@ pub trait GroupInformation: ElementInformation {
     fn is_connected(&self) -> bool;
 }
 
-pub trait GroupQuery: GroupInformation + TryInto<Self::NodeQuery> {
-    type NodeQuery;
-}
+pub trait GroupQuery: GraphQuery + GroupInformation + TryInto<Self::Query<NodeId>> {}
 
 pub trait Navigation: Deref<Target: QueryKey> + Sized {
     type Direction: Copy + Not<Output = Self::Direction>;
@@ -120,11 +130,16 @@ where
     }
 }
 
-impl <'a, K> GraphQuery for Query<'a, K>
-    where K: QueryKey {
-    type Holder<Q> = Query<'a, Q> where Q: QueryKey;
+impl<'a, K> GraphQuery for Query<'a, K>
+where
+    K: QueryKey,
+{
+    type Query<Q>
+        = Query<'a, Q>
+    where
+        Q: QueryKey;
 
-    fn to<Q>(self, key: Q) -> Self::Holder<Q>
+    fn to<Q>(self, key: Q) -> Self::Query<Q>
     where
         Q: QueryKey,
     {
@@ -139,7 +154,6 @@ where
     K: QueryKey,
     Query<'a, NodeId>: From<Query<'a, K>>,
 {
-    type NodeQuery = Query<'a, NodeId>;
 }
 
 impl<K> PartialEq<Self> for Query<'_, K>

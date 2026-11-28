@@ -7,25 +7,28 @@ use crate::geometry::{
     AreaBounds, Axis, Axis::*, AxisBounds, BoundsAlignment, Cardinal, Sign, Sign::*,
 };
 use crate::iter::{IterativeQueryNavigation, QueryIter};
+use crate::key::NodeKey;
 use crate::key::QueryKey;
 use crate::line::{Line, LineQuery};
 use crate::neighbours::{NeighbourSurfaces, NeighbourTiles, NeighbourhoodQuery};
 use crate::node::{NodeNotFound, NodeQuery};
 use crate::query::{
-    ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, Query,
+    ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GroupInformation,
+    Query,
 };
-use geotm_macros::QueryKey;
+use geotm_macros::{Encode, NodeKey, QueryKey};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use std::collections::HashMap;
 use std::collections::hash_map::Keys;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter, write};
 use std::hash::Hash;
 use std::ops::{Index, IndexMut};
 use uuid::Uuid;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, QueryKey)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Serialize, Deserialize, QueryKey, NodeKey, Encode)]
+#[encode("{}")]
 pub struct NodeId(Uuid);
 
 impl NodeId {
@@ -134,7 +137,7 @@ impl Graph {
         let node = Query::new(self, node_id);
         if node.kind() == ElementKind::Surface {
             self.transform_area(
-                &Query::<Area>::from(node).to_segmented(Cardinal::new(axis, Negative)),
+                &node.to_interior().unwrap().to_segmented(axis),
                 new_bounds,
                 packing_tiebreaker,
             );
@@ -230,11 +233,10 @@ impl Graph {
 
         for (segment, segment_bounds) in container.segments.iter().zip(new_segment_bounds) {
             for cross_segment in Query::new(self, *segment)
-                .to_segments(Cardinal::new(!container.axis, Positive))
+                .to_segments(!container.axis)
                 .collect::<Vec<_>>()
             {
-                let subcontainer = Query::new(self, cross_segment)
-                    .to_segmented(Cardinal::new(container.axis, Positive));
+                let subcontainer = Query::new(self, cross_segment).to_segmented(container.axis);
                 self.transform_area(&subcontainer, segment_bounds, packing_tiebreaker);
             }
         }
@@ -253,8 +255,8 @@ impl Graph {
             Some(
                 destination
                     .into_iter()
-                    .position(|sib| sib.to_caret(target.side) <= target)
-                    .unwrap(),
+                    .position(|sib| sib.to_side(target.side) <= target)
+                    .unwrap_or(0),
             )
         } else {
             None
@@ -268,9 +270,10 @@ impl Graph {
         for<'a> Query<'a, Caret>: Ord + PartialOrd,
         Self: NeighbourIndexMut<T>,
     {
-        debug_assert_eq!(a.into().side, !b.into().side);
         let a_id = a.into().id;
         let b_id = b.into().id;
+
+        debug_assert_ne!(a_id, b_id);
 
         if let Some(index) = self.find_insertion_index(a, b_id) {
             self.neighbours_mut(a).insert(index, b_id);
@@ -287,81 +290,17 @@ impl Graph {
         for<'a> Query<'a, T>: NeighbourhoodQuery,
         Self: NeighbourIndexMut<T>,
     {
-        debug_assert_eq!(a.into().side, !b.into().side);
+        debug_assert_ne!(a.into().id, b.into().id);
         self.neighbours_mut(a).retain(|id| id != &b.into().id);
         self.neighbours_mut(b).retain(|id| id != &a.into().id)
     }
 
-    pub(crate) fn replace_connections(&mut self, original: Line, replacement: Line) {
-        let (full_replacement_bounds, replacements) = {
-            let replacement = Query::new(self, replacement);
-            (
-                replacement.bounds().axis_bounds,
-                replacement
-                    .to_end(Negative)
-                    .to_iter(Positive)
-                    .take_while_inclusive(|caret| caret.id != original[Positive])
-                    .map(|c| *c)
-                    .collect::<Vec<_>>(),
-            )
-        };
+    pub(crate) fn replace_connections(&mut self, target: Line, replacement: Line) {
+        debug_assert!(Query::new(self, target).is_connected());
+        debug_assert!(Query::new(self, replacement).is_connected());
+        let target = Query::new(self, target);
 
-        let originals: Vec<_> = Query::new(self, original)
-            .to_end(Negative)
-            .to_iter(Positive)
-            .take_while_inclusive(|caret| caret.id != original[Positive])
-            .map(|c| *c)
-            .collect();
-
-        let opposites: Vec<_> = originals
-            .iter()
-            .flat_map(|&caret| {
-                Query::new(self, NeighbourTiles(caret))
-                    .into_iter()
-                    .map(|query| *query)
-            })
-            .collect();
-
-        for original_caret in originals {
-            for &opposing_id in &opposites {
-                let opposing_caret = Caret::new(opposing_id, !original.side);
-                let opposing_bounds = Query::new(self, opposing_caret).bounds().axis_bounds;
-                match full_replacement_bounds.alignment(&opposing_bounds) {
-                    BoundsAlignment::Before | BoundsAlignment::After => {}
-                    _ => {
-                        self.unlink(
-                            NeighbourTiles(original_caret),
-                            NeighbourTiles(opposing_caret),
-                        );
-                    }
-                }
-            }
-
-            let original_bounds = Query::new(self, original_caret).bounds().axis_bounds;
-
-            for &replacement_caret in &replacements {
-                let replacement_bounds = Query::new(self, replacement_caret).bounds().axis_bounds;
-                match replacement_bounds.alignment(&original_bounds) {
-                    BoundsAlignment::Before | BoundsAlignment::After => {}
-                    _ => {
-                        self.link(
-                            NeighbourTiles(original_caret),
-                            NeighbourTiles(replacement_caret),
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    /// note: the replacements are attached to the scope, since it's possible that at this stage the scope has no opposites yet
-    pub(crate) fn update_connections(&mut self, target: Line) {
-        let targets: Vec<_> = Query::new(self, target)
-            .to_end(Negative)
-            .to_iter(Positive)
-            .take_while_inclusive(|caret| caret.id != target[Positive])
-            .map(|c| *c)
-            .collect();
+        let targets: Vec<_> = target.into_iter().map(|c| *c).collect();
 
         let opposites: Vec<_> = targets
             .iter()
@@ -371,6 +310,78 @@ impl Graph {
                     .map(|query| *query)
             })
             .collect();
+
+        let (full_replacement_bounds, replacements) = {
+            let replacement = Query::new(self, replacement);
+            (
+                replacement.bounds().axis_bounds,
+                replacement.into_iter().map(|c| *c).collect::<Vec<_>>(),
+            )
+        };
+
+        // sentinels are special and connect on the same side as where they are located.
+        let opposing_side = if target.kind() == ElementKind::Surface {
+            target.side
+        } else {
+            !target.side
+        };
+
+        let target = *target;
+
+        println!("og: {:?}", targets);
+        println!("op: {:?}", opposites);
+        println!("rep: {:?}", replacements);
+
+        for &target_caret in &targets {
+            for &opposing_id in &opposites {
+                let opposing_caret = Caret::new(opposing_id, opposing_side);
+                let opposing_bounds = Query::new(self, opposing_caret).bounds().axis_bounds;
+                match full_replacement_bounds.alignment(&opposing_bounds) {
+                    BoundsAlignment::Before | BoundsAlignment::After => {}
+                    _ => {
+                        self.unlink(NeighbourTiles(target_caret), NeighbourTiles(opposing_caret));
+                    }
+                }
+            }
+        }
+
+        // sentinels are also special in that they don't connect to each other
+        if target != replacement {
+            for original_caret in targets {
+                let original_bounds = Query::new(self, original_caret).bounds().axis_bounds;
+
+                for &replacement_caret in &replacements {
+                    let replacement_bounds =
+                        Query::new(self, replacement_caret).bounds().axis_bounds;
+                    match replacement_bounds.alignment(&original_bounds) {
+                        BoundsAlignment::Before | BoundsAlignment::After => {}
+                        _ => {
+                            self.link(
+                                NeighbourTiles(original_caret),
+                                NeighbourTiles(replacement_caret),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// note: the replacements are attached to the scope, since it's possible that at this stage the scope has no opposites yet
+    pub(crate) fn update_connections(&mut self, target: Line) {
+        let targets: Vec<_> = Query::new(self, target).into_iter().map(|c| *c).collect();
+
+        let opposites: Vec<_> = targets
+            .iter()
+            .flat_map(|&caret| {
+                Query::new(self, NeighbourTiles(caret))
+                    .into_iter()
+                    .map(|query| *query)
+            })
+            .collect();
+
+        println!("og: {:?}", targets);
+        println!("op: {:?}", opposites);
 
         for target_caret in targets {
             let target_bounds = Query::new(self, target_caret).bounds().axis_bounds;
@@ -415,7 +426,7 @@ where
 
 impl NeighbourIndexMut<NeighbourTiles> for Graph {
     fn neighbours_mut(&mut self, index: NeighbourTiles) -> &mut Vec<NodeId> {
-        let caret: Caret = index.into();
+        let mut caret: Caret = index.into();
         &mut self.tile_neighbourhoods.get_mut(&caret.id).unwrap()[caret.side]
     }
 }
@@ -452,6 +463,9 @@ impl QueryContext<NodeId> for Graph {
         &self,
         key: NodeId,
     ) -> Result<Query<'_, Self::OutKey>, KeyedError<NodeId, Self::ErrorDetail>> {
-        Ok(self.resolve(key.0).map_err(|_| NodeNotFound).with_context(|_| KeyedSnafu { key })?)
+        Ok(self
+            .resolve(key.0)
+            .map_err(|_| NodeNotFound)
+            .with_context(|_| KeyedSnafu { key })?)
     }
 }

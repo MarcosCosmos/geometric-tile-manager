@@ -1,18 +1,14 @@
 use crate::command::{Command, RawCommandExecutor};
+use crate::context::QueryContext;
+use crate::error::{KeyedError, QueryError};
 use crate::geometry::AreaBounds;
 use crate::graph::{Graph, NeighbourhoodGroup, NodeId};
 use crate::key::QueryKey;
+use crate::query::Query;
 use geotm_macros::QueryKey;
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
-use snafu::ResultExt;
-use crate::command::add_tile::AddTile;
-use crate::command::transform_area::TransformError;
-use crate::context::QueryContext;
-use crate::error::{KeyedError, KeyedSnafu, QueryError};
-use crate::line::Line;
-use crate::query::Query;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Command, QueryKey)]
 pub struct AddSurface(pub AreaBounds);
@@ -25,8 +21,13 @@ impl Deref for AddSurface {
     }
 }
 
-impl QueryContext<AddSurface> for Graph
-{
+impl Display for AddSurface {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+impl QueryContext<AddSurface> for Graph {
     type OutKey = AddSurface;
 
     type ErrorDetail = QueryError<AddSurface, !, !>;
@@ -38,7 +39,6 @@ impl QueryContext<AddSurface> for Graph
         Ok(Query::new(self, key))
     }
 }
-
 
 impl RawCommandExecutor<AddSurface> for Graph {
     type Response = NodeId;

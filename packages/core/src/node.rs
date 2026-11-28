@@ -1,14 +1,17 @@
 use crate::area::{Area, AreaQuery};
 use crate::caret::{Caret, CaretQuery};
 use crate::geometry::Sign::{Negative, Positive};
-use crate::geometry::{AreaBounds, Cardinal, NORTH_EAST, NORTH_WEST, SOUTH_EAST, SOUTH_WEST};
+use crate::geometry::{AreaBounds, Cardinal, NORTH_EAST, NORTH_WEST, SOUTH_EAST, SOUTH_WEST, WEST};
 use crate::graph::NodeId;
 use crate::key::QueryKey;
-use crate::line::Line;
+use crate::line::{Line, LineQuery};
+use crate::neighbours::NeighbourTiles;
+use crate::query::ElementKind::Surface;
 use crate::query::{ElementInformation, ElementInformation2D, ElementKind, GraphQuery, Query};
 use crate::query_impl;
 use snafu::{Snafu, ensure};
 use std::fmt::Debug;
+use std::ops::Deref;
 
 impl From<Caret> for NodeId {
     fn from(value: Caret) -> Self {
@@ -43,11 +46,15 @@ impl TryFrom<Area> for NodeId {
 
 query_impl! {From<Caret> | TryFrom<Line | Area> for NodeId}
 
-pub trait NodeQuery: ElementInformation2D {
-    type CaretInformation: CaretQuery;
-    type AreaInformation: AreaQuery;
-    fn to_caret(self, side: Cardinal) -> Self::CaretInformation;
+pub trait NodeQuery: GraphQuery + ElementInformation2D + Deref<Target = NodeId> {
+    fn to_side(self, side: Cardinal) -> Self::Query<Caret> {
+        self.to(Caret::new(*self, side))
+    }
     fn to_surface(self) -> Self;
+
+    /// If and only if this is a non-empty surface return the area,
+    /// made up of tile corners, that encloses all of the interior tiles  
+    fn to_interior(self) -> Option<Self::Query<Area>>;
 }
 
 impl ElementInformation for Query<'_, NodeId> {
@@ -67,13 +74,6 @@ impl ElementInformation2D for Query<'_, NodeId> {
 }
 
 impl<'a> NodeQuery for Query<'a, NodeId> {
-    type CaretInformation = Query<'a, Caret>;
-    type AreaInformation = Query<'a, Area>;
-
-    fn to_caret(self, side: Cardinal) -> Query<'a, Caret> {
-        self.to(Caret::new(*self, side))
-    }
-
     fn to_surface(self) -> Query<'a, NodeId> {
         self.to(self
             .context
@@ -81,6 +81,18 @@ impl<'a> NodeQuery for Query<'a, NodeId> {
             .get(&*self)
             .copied()
             .unwrap_or(*self))
+    }
+
+    fn to_interior(self) -> Option<Self::Query<Area>> {
+        if self.kind() == Surface {
+            let mut neighbours = self.to(NeighbourTiles(*self.to_side(WEST))).into_iter();
+            let neg = neighbours.next()?;
+            let pos = neighbours.next_back().unwrap_or(neg);
+            self.to(Line::new(*neg, *pos, WEST))
+                .to_area(|iter| iter.last())
+        } else {
+            None
+        }
     }
 }
 

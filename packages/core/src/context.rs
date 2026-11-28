@@ -6,7 +6,7 @@ use std::error::Error;
 
 pub trait QueryContext<K>
 where
-    K: QueryKey
+    K: QueryKey,
 {
     type OutKey: QueryKey;
     type ErrorDetail: Error + 'static;

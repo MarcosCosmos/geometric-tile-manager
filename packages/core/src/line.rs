@@ -4,33 +4,40 @@ use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu, QueryError, ValidationError};
 use crate::geometry::{Cardinal, LineBounds, Sign, Sign::*};
 use crate::graph::{Graph, NodeId};
-use crate::iter::{IterativeQueryNavigation, NavIter};
-use crate::key::QueryKey;
-use crate::node::{NodeNotFound, NodeQuery};
-use crate::query::{ElementInformation, ElementInformation1D, ElementKind, GraphQuery, GroupInformation, Navigation, NavigationMut, Query, Standardisation};
+use crate::iter::{IterativeQueryNavigation, NavIter, RangeIter};
+use crate::key::{NodeKey, QueryKey};
+use crate::neighbours::NeighbourTiles;
+use crate::node::NodeQuery;
+use crate::query::{
+    ElementInformation, ElementInformation1D, ElementKind, GraphQuery, GroupInformation,
+    Navigation, NavigationMut, Query, Standardisation,
+};
 use crate::query_impl;
-use geotm_macros::{QueryKey, ValidationError};
+use geotm_macros::{Encode, QueryKey, ValidationError};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use std::cmp::Ordering;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, Index, IndexMut};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
 // As in, a line between two parallel Carets.
 // This line may or may not be fully "connected" (without cutting through the interior of any tiles)
+#[derive(Copy, Clone, Eq, PartialEq, Serialize, Deserialize, QueryKey, Encode)]
+#[encode("[{negative_id}..{positive_id}].{side}")]
 pub struct Line<Node = NodeId>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
+    #[serde(bound(deserialize = "Node: NodeKey"))]
     negative_id: Node,
+    #[serde(bound(deserialize = "Node: NodeKey"))]
     positive_id: Node,
     pub side: Cardinal,
 }
 
 impl<Node> Line<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     pub fn new(negative_id: Node, positive_id: Node, side: Cardinal) -> Self {
         Self {
@@ -43,7 +50,7 @@ where
 
 impl<Node> Index<Sign> for Line<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     type Output = Node;
 
@@ -57,7 +64,7 @@ where
 
 impl<Node> IndexMut<Sign> for Line<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     fn index_mut(&mut self, index: Sign) -> &mut Self::Output {
         match index {
@@ -69,7 +76,7 @@ where
 
 impl<Node> From<Caret<Node>> for Line<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     fn from(value: Caret<Node>) -> Self {
         Self::new(value.id, value.id, value.side)
@@ -78,20 +85,30 @@ where
 
 query_impl! { From<Caret> for Line }
 
-pub trait LineQuery: ElementInformation1D + Deref<Target = Line> {
-    type CaretQuery: CaretQuery;
-    type AreaQuery: AreaQuery;
-    fn to_end(self, sign: Sign) -> Self::CaretQuery;
+pub trait LineQuery:
+    Deref<Target = Line>
+    + ElementInformation1D
+    + IterativeQueryNavigation
+    + Navigation<Direction = Sign>
+{
+    fn to_end(self, sign: Sign) -> Self::Query<Caret>;
 
+    /// Opposable as in is facing towards an opposing line.
+    /// That is, a line with the same axis-bounds, on the inverse side of the opposing tile(s).
     fn to_opposable(self) -> Option<Self>;
+
     fn to_opposing(self) -> Option<Self>;
+
+    /// a special case of to opposing that obtains the sentinel side of the containing surface is this line is touching it.
+    fn to_sentinel(self) -> Option<Self>;
+
     /// This method finds the line that includes at least one of the existing ends but where both ends have the same `bounds().side_location`, if any exists.
     /// It will use given sign to choose which direction to scan towards.
     fn to_straightened(self, direction: Sign) -> Option<Self>;
 
-    /// scans in the opposite direction of the current line, and is generally likely to produce an area as long as F returns something
-    fn to_area<F>(self, f: F) -> Option<Self::AreaQuery>
-    where F : FnOnce(NavIter<Query<Line>>) -> Option<Query<Line>>;
+    fn to_area<F>(self, f: F) -> Option<Self::Query<Area>>
+    where
+        F: FnOnce(NavIter<Query<Line>>) -> Option<Query<Line>>;
 }
 
 pub trait LineNavigationMut: NavigationMut + Deref<Target = Line> {
@@ -178,9 +195,7 @@ impl<'a> Standardisation for Query<'a, Line> {
 }
 
 impl<'a> LineQuery for Query<'a, Line> {
-    type CaretQuery = Query<'a, Caret>;
-    type AreaQuery = Query<'a, Area>;
-    fn to_end(self, sign: Sign) -> Self::CaretQuery {
+    fn to_end(self, sign: Sign) -> Self::Query<Caret> {
         self.to(Caret::new(self[sign], self.side))
     }
 
@@ -211,18 +226,30 @@ impl<'a> LineQuery for Query<'a, Line> {
         Some(self)
     }
 
-    fn to_opposing(mut self) -> Option<Self> {
+    fn to_opposing(self) -> Option<Self> {
         let (cross_neg, cross_pos) = self.side.perpendicular_directions();
-        self[Negative] = self
-            .to(Caret::new(self[Negative], cross_neg))
-            .to_next(self.side.sign)?
-            .id;
-        self[Negative] = self
-            .to(Caret::new(self[Positive], cross_pos))
-            .to_next(self.side.sign)?
-            .id;
-        self.side = !self.side;
-        Some(self)
+        Some(self.to(Line::new(
+            self.to(Caret::new(self[Negative], cross_neg))
+                .to_next(self.side.sign)?
+                .id,
+            self.to(Caret::new(self[Positive], cross_pos))
+                .to_next(self.side.sign)?
+                .id,
+            self.side,
+        )))
+    }
+
+    fn to_sentinel(mut self) -> Option<Self> {
+        let surface = self.to_end(Negative).to_node().to_surface();
+        let surface_side = surface.to_side(self.side);
+        if Query::<NeighbourTiles>::from(surface_side)
+            .into_iter()
+            .any(|node| *node == self[Negative])
+        {
+            Some(surface_side.into())
+        } else {
+            None
+        }
     }
 
     /// This method finds the line that includes at least one of the existing ends but where both ends have the same `bounds().side_location`, if any exists.
@@ -255,8 +282,10 @@ impl<'a> LineQuery for Query<'a, Line> {
         }
     }
 
-    fn to_area<F>(self, f: F) -> Option<Self::AreaQuery>
-        where F : FnOnce(NavIter<Query<Line>>) -> Option<Query<Line>> {
+    fn to_area<F>(self, f: F) -> Option<Self::Query<Area>>
+    where
+        F: FnOnce(NavIter<Query<Line>>) -> Option<Query<Line>>,
+    {
         let opp = f(self.to_iter(!self.side.sign))?;
         let base_area: Query<Area> = self.to_end(Negative).to_node().into();
         Some(base_area.with_side(*self).with_side(*opp))
@@ -271,91 +300,99 @@ impl Ord for Query<'_, Line> {
     }
 }
 
+/// For `Line` queries, navigation is among 'siblings' occupying the same row/column area:
+/// - A group of 'sibling' lines must all be parallel, with the same axis bounds, and there must be perpendiclar lines at those bounds consisting entirely of collinear carets.
 impl Navigation for Query<'_, Line> {
     type Direction = Sign;
 
     fn peek(&self, direction: Self::Direction) -> Option<Line> {
-        let target_side = Cardinal::new(self.side.axis, direction);
-        let mut candidate = Line {
-            side: target_side,
-            ..**self
-        };
-        if self.kind() == ElementKind::Tile
-            && self.side.sign != direction
-            && self.to(candidate).is_connected()
-        {
-            Some(candidate)
-        } else {
-            let (cross_neg, cross_pos) = self.side.perpendicular_directions();
-            let mut neg_iter = self
-                .to(Caret::new(self[Negative], cross_neg))
-                .to_iter(direction);
-            let mut pos_iter = self
-                .to(Caret::new(self[Positive], cross_pos))
-                .to_iter(direction);
-            if let (Some(next_neg), Some(next_pos)) = (neg_iter.next(), pos_iter.next()) {
-                if self.kind() == ElementKind::Tile
-                    && self.side.sign == direction
-                    && self.is_connected()
-                {
-                    let candidate = Line::new(next_neg.id, next_pos.id, !self.side);
-                    assert!(self.to(candidate).is_connected());
-                    Some(candidate)
-                } else if self.kind() == ElementKind::Surface {
-                    assert_ne!(self.side.sign, direction); // we have to be going in the reverse direction if we got some, otherwise we'd be going into the void!
-                    let candidate = Line::new(next_neg.id, next_pos.id, self.side);
-                    assert!(self.to(candidate).is_connected());
+        match self.kind() {
+            ElementKind::Tile => {
+                let target_side = Cardinal::new(self.side.axis, direction);
+                let candidate = Line {
+                    side: target_side,
+                    ..**self
+                };
+                if self.side.sign != direction && self.to(candidate).is_connected() {
                     Some(candidate)
                 } else {
-                    let mut neg = self.to(Caret::new(next_neg.id, target_side));
-                    let mut pos = self.to(Caret::new(next_pos.id, target_side));
-                    let mut neg_location;
-                    let mut pos_location;
-                    loop {
-                        let candidate = self.to(Line::new(neg.id, pos.id, target_side));
-                        if !candidate.is_connected()
-                            && let (Some(next_neg), Some(next_pos)) =
-                                (neg_iter.next(), pos_iter.next())
-                        {
-                            neg.id = next_neg.id;
-                            pos.id = next_pos.id;
-
-                            neg_location = neg.bounds().side_location;
-                            pos_location = pos.bounds().side_location;
+                    let (cross_neg, cross_pos) = self.side.perpendicular_directions();
+                    let mut neg_iter = self
+                        .to(Caret::new(self[Negative], cross_neg))
+                        .to_iter(direction);
+                    let mut pos_iter = self
+                        .to(Caret::new(self[Positive], cross_pos))
+                        .to_iter(direction);
+                    if let (Some(next_neg), Some(next_pos)) = (neg_iter.next(), pos_iter.next()) {
+                        if self.side.sign == direction && self.is_connected() {
+                            let candidate = Line::new(next_neg.id, next_pos.id, !self.side);
+                            assert!(self.to(candidate).is_connected());
+                            Some(candidate)
                         } else {
-                            break Some(*candidate);
-                        }
-
-                        loop {
-                            match (direction, neg_location.cmp(&pos_location)) {
-                                (Negative, Ordering::Greater) | (Positive, Ordering::Less)
-                                    if let Some(next_neg) = neg_iter.next() =>
+                            let mut neg = self.to(Caret::new(next_neg.id, target_side));
+                            let mut pos = self.to(Caret::new(next_pos.id, target_side));
+                            let mut neg_location;
+                            let mut pos_location;
+                            loop {
+                                let candidate = self.to(Line::new(neg.id, pos.id, target_side));
+                                if !candidate.is_connected()
+                                    && let (Some(next_neg), Some(next_pos)) =
+                                        (neg_iter.next(), pos_iter.next())
                                 {
                                     neg.id = next_neg.id;
-                                    neg_location = neg.bounds().side_location;
-                                }
-                                (Negative, Ordering::Less) | (Positive, Ordering::Greater)
-                                    if let Some(next_pos) = pos_iter.next() =>
-                                {
                                     pos.id = next_pos.id;
-                                    pos_location = self.bounds().side_location;
+
+                                    neg_location = neg.bounds().side_location;
+                                    pos_location = pos.bounds().side_location;
+                                } else {
+                                    break Some(*candidate);
                                 }
-                                _ => break,
-                            };
+
+                                loop {
+                                    match (direction, neg_location.cmp(&pos_location)) {
+                                        (Negative, Ordering::Greater)
+                                        | (Positive, Ordering::Less)
+                                            if let Some(next_neg) = neg_iter.next() =>
+                                        {
+                                            neg.id = next_neg.id;
+                                            neg_location = neg.bounds().side_location;
+                                        }
+                                        (Negative, Ordering::Less)
+                                        | (Positive, Ordering::Greater)
+                                            if let Some(next_pos) = pos_iter.next() =>
+                                        {
+                                            pos.id = next_pos.id;
+                                            pos_location = self.bounds().side_location;
+                                        }
+                                        _ => break,
+                                    };
+                                }
+                            }
                         }
+                    } else {
+                        None
                     }
                 }
-            } else {
-                None
             }
+            _ => None,
         }
+    }
+}
+
+impl IntoIterator for Query<'_, Line> {
+    type Item = <Self as GraphQuery>::Query<Caret>;
+    type IntoIter = RangeIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        debug_assert!(self.is_connected());
+        RangeIter::new(self.to_end(Negative), self.to_end(Positive), Positive)
     }
 }
 
 impl<Node> QueryContext<Line<Node>> for Graph
 where
     Graph: QueryContext<Node, OutKey = NodeId>,
-    Node: QueryKey,
+    Node: NodeKey,
 {
     type OutKey = Line;
 
