@@ -1,25 +1,59 @@
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
+use geotm_macros::Encode;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use std::fmt::Debug;
+use std::fmt::{Display, Formatter, write};
 use std::ops::{Index, IndexMut, Not};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Axis {
     Horizontal,
     Vertical,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+impl Display for Axis {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Horizontal => write!(f, "X"),
+            Vertical => write!(f, "Y"),
+        }
+    }
+}
+
+impl Debug for Axis {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Sign {
     Negative,
     Positive,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+impl Display for Sign {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Negative => write!(f, "-"),
+            Positive => write!(f, "+"),
+        }
+    }
+}
+
+impl Debug for Sign {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+#[derive(Copy, Clone, Default, Eq, PartialEq, Hash, Serialize, Deserialize, Encode)]
+#[encode("{}..{}")]
 pub struct AxisBounds {
-    negative: i32,
-    positive: i32,
+    pub negative: i32,
+    pub positive: i32,
 }
 
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
@@ -148,7 +182,8 @@ impl Ord for AxisBounds {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Default, Eq, PartialEq, Hash, Serialize, Deserialize, Encode)]
+#[encode("(X: {horizontal}, Y: {vertical})")]
 pub struct AreaBounds {
     horizontal: AxisBounds,
     vertical: AxisBounds,
@@ -163,11 +198,12 @@ impl AreaBounds {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Encode)]
+#[encode("({side_location}/{axis_bounds}).{side}")]
 pub struct LineBounds {
     pub side: Cardinal,
-    pub axis_bounds: AxisBounds,
     pub side_location: i32,
+    pub axis_bounds: AxisBounds,
 }
 
 impl From<LineBounds> for AreaBounds {
@@ -180,7 +216,7 @@ impl From<LineBounds> for AreaBounds {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 /// Usually associated with a side of a box
 pub struct Cardinal {
     pub axis: Axis,
@@ -204,6 +240,39 @@ impl Cardinal {
                 sign: Positive,
             },
         )
+    }
+}
+
+impl Display for Cardinal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Cardinal {
+                    axis: Horizontal,
+                    sign: Negative,
+                } => "W",
+                Cardinal {
+                    axis: Horizontal,
+                    sign: Positive,
+                } => "E",
+                Cardinal {
+                    axis: Vertical,
+                    sign: Negative,
+                } => "N",
+                Cardinal {
+                    axis: Vertical,
+                    sign: Positive,
+                } => "S",
+            }
+        )
+    }
+}
+
+impl Debug for Cardinal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
     }
 }
 
@@ -295,6 +364,12 @@ pub struct Diagonal {
     pub vertical: Sign,
 }
 
+impl Debug for Diagonal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
 impl Not for Diagonal {
     type Output = Self;
     fn not(self) -> Self::Output {
@@ -322,6 +397,33 @@ impl IndexMut<Axis> for Diagonal {
             Horizontal => &mut self.horizontal,
             Vertical => &mut self.vertical,
         }
+    }
+}
+
+impl Display for Diagonal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Diagonal {
+                    horizontal: Negative,
+                    vertical: Negative,
+                } => "NW",
+                Diagonal {
+                    horizontal: Negative,
+                    vertical: Positive,
+                } => "SW",
+                Diagonal {
+                    horizontal: Positive,
+                    vertical: Negative,
+                } => "NE",
+                Diagonal {
+                    horizontal: Positive,
+                    vertical: Positive,
+                } => "SE",
+            }
+        )
     }
 }
 

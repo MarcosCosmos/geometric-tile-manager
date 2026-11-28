@@ -5,7 +5,10 @@ use geotm_core::geometry::{Axis, Cardinal};
 use geotm_core::graph::{Graph, NodeId};
 use geotm_core::neighbours::{NeighbourSurfaces, NeighbourTiles, Neighbours};
 use geotm_core::node::NodeQuery;
-use geotm_core::query::{ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GraphQuery, Navigation, NavigationMut, Query};
+use geotm_core::query::{
+    ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GraphQuery,
+    Navigation, NavigationMut, Query,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -126,7 +129,7 @@ impl Navigation for FocusNavigator<'_, '_> {
                             && node.kind() == ElementKind::Surface
                         {
                             current
-                                .to(NeighbourSurfaces(*node.to_caret(direction)))
+                                .to(NeighbourSurfaces(*node.to_side(direction)))
                                 .into()
                         } else {
                             immediate.into()
@@ -141,7 +144,7 @@ impl Navigation for FocusNavigator<'_, '_> {
                         }) =>
                     {
                         let distant =
-                            next_surface.to(NeighbourTiles(*next_surface.to_caret(direction)));
+                            next_surface.to(NeighbourTiles(*next_surface.to_side(direction)));
                         if distant
                             .into_iter()
                             .any(|node| node.kind() == ElementKind::Tile)

@@ -1,9 +1,9 @@
-pub mod coord;
-pub mod focus;
 pub mod auto;
 pub mod context;
-pub mod transform;
+pub mod coord;
+pub mod focus;
 pub mod relative;
+pub mod transform;
 mod transform_line;
 
 pub fn add(left: u64, right: u64) -> u64 {

@@ -1,15 +1,17 @@
 use crate::caret::{Caret, CaretQuery};
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu};
+use crate::geometry::Sign::{Negative, Positive};
 use crate::graph::{Graph, NodeId};
 use crate::iter::QueryIter;
-use crate::key::{QueryKey, query_impl};
+use crate::key::{NodeKey, QueryKey, query_impl};
+use crate::line::Line;
 use crate::node::NodeQuery;
 use crate::query::{ElementInformation, ElementKind, GraphQuery, Query, Standardisation};
 use geotm_macros::QueryKey;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter, write};
 
 pub trait NeighbourhoodQuery:
     GraphQuery + IntoIterator<Item: NodeQuery, IntoIter: DoubleEndedIterator>
@@ -25,27 +27,63 @@ pub trait NeighbourSurfacesQuery {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
-pub struct NeighbourTiles<Node = NodeId>(pub Caret<Node>)
+pub struct NeighbourTiles<Node = NodeId>(
+    #[serde(bound(deserialize = "Node: NodeKey"))] pub Caret<Node>,
+)
 where
-    Node: QueryKey;
+    Node: NodeKey;
+
+impl<Node> Display for NeighbourTiles<Node>
+where
+    Node: NodeKey + Display,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#{}", self.0)
+    }
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
-pub struct NeighbourSurfaces<Node = NodeId>(pub Caret<Node>)
+pub struct NeighbourSurfaces<Node = NodeId>(
+    #[serde(bound(deserialize = "Node: NodeKey"))] pub Caret<Node>,
+)
 where
-    Node: QueryKey;
+    Node: NodeKey;
+
+impl<Node> Display for NeighbourSurfaces<Node>
+where
+    Node: NodeKey + Display,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "*{}", self.0)
+    }
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
 pub enum Neighbours<Node = NodeId>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
+    #[serde(bound(deserialize = "Node: NodeKey"))]
     Tiles(NeighbourTiles<Node>),
+    #[serde(bound(deserialize = "Node: NodeKey"))]
     Surfaces(NeighbourSurfaces<Node>),
+}
+
+impl<Node> Display for Neighbours<Node>
+where
+    Node: NodeKey + Display,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Neighbours::Tiles(tiles) => Display::fmt(tiles, f),
+            Neighbours::Surfaces(tiles) => Display::fmt(tiles, f),
+        }
+    }
 }
 
 impl<Node> From<NeighbourTiles<Node>> for Neighbours<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     fn from(value: NeighbourTiles<Node>) -> Self {
         Self::Tiles(value)
@@ -54,7 +92,7 @@ where
 
 impl<Node> From<NeighbourSurfaces<Node>> for Neighbours<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     fn from(value: NeighbourSurfaces<Node>) -> Self {
         Self::Surfaces(value)
@@ -63,7 +101,7 @@ where
 
 impl<Node> From<Caret<Node>> for NeighbourTiles<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     fn from(value: Caret<Node>) -> Self {
         Self(value)
@@ -72,7 +110,7 @@ where
 
 impl<Node> From<Caret<Node>> for NeighbourSurfaces<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     fn from(value: Caret<Node>) -> Self {
         Self(value)
@@ -108,7 +146,9 @@ impl<'a, T> Standardisation for Query<'a, T>
 where
     T: QueryKey + Into<Caret>,
     Self: IntoIterator<Item = Query<'a, NodeId>, IntoIter: DoubleEndedIterator>,
-{ type Error = !; }
+{
+    type Error = !;
+}
 
 impl<'a, T> NeighbourhoodQuery for Query<'a, T>
 where
@@ -162,7 +202,7 @@ where
 impl<Node> QueryContext<NeighbourTiles<Node>> for Graph
 where
     Self: QueryContext<Node, OutKey = NodeId>,
-    Node: QueryKey,
+    Node: NodeKey,
 {
     type OutKey = NeighbourTiles;
     type ErrorDetail = KeyedError<Node, <Self as QueryContext<Node>>::ErrorDetail>;
@@ -187,7 +227,7 @@ where
 impl<Node> QueryContext<NeighbourSurfaces<Node>> for Graph
 where
     Self: QueryContext<Node, OutKey = NodeId>,
-    Node: QueryKey,
+    Node: NodeKey,
 {
     type OutKey = NeighbourSurfaces;
     type ErrorDetail = KeyedError<Node, <Self as QueryContext<Node>>::ErrorDetail>;

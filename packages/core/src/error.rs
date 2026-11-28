@@ -9,7 +9,7 @@ impl ValidationError for ! {}
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
-#[snafu(display("Invalid key {key:?}"))]
+#[snafu(display("Invalid key {key}"))]
 pub struct KeyedError<K, E>
 where
     K: QueryKey,

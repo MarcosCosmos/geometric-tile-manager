@@ -1,12 +1,12 @@
 use crate::context::QueryContext;
 use crate::error::KeyedError;
+use crate::graph::Graph;
 use crate::key::QueryKey;
 use geotm_macros::Command;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::error::Error;
 use std::fmt::Debug;
-use crate::graph::Graph;
 
 pub mod add_surface;
 pub mod add_tile;

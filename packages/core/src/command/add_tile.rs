@@ -1,23 +1,29 @@
 use crate::area::{Area, AreaQuery};
-use crate::command::transform_area::{TransformArea, TransformInformation, TransformSurroundings};
-use crate::command::transform_area::{TransformError};
+use crate::caret::Caret;
+use crate::command::add_surface::AddSurface;
+use crate::command::transform_area::TransformError;
+use crate::command::transform_area::{Transform, TransformInformation, TransformSurroundings};
 use crate::command::{Command, RawCommandExecutor};
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu, QueryError};
 use crate::geometry::Sign::{Negative, Positive};
-use crate::geometry::{AreaBounds, AxisBounds, Cardinal};
+use crate::geometry::{AreaBounds, AxisBounds, Cardinal, EAST, NORTH, SOUTH, WEST};
 use crate::graph::{Graph, NodeId};
 use crate::iter::IterativeQueryNavigation;
 use crate::key::QueryKey;
 use crate::line::{Line, LineQuery};
+use crate::neighbours::NeighbourTiles;
 use crate::node::NodeQuery;
-use crate::query::{ElementInformation, ElementKind, GraphQuery, GroupInformation, Navigation, Query, Standardisation};
+use crate::query::{
+    ElementInformation, ElementKind, GraphQuery, GroupInformation, Navigation, Query,
+    Standardisation,
+};
 use crate::query::{ElementInformation1D, ElementInformation2D};
 use geotm_macros::QueryKey;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter, write};
 
 // todo: expand the concept of the guide to include both a line and an axis bounds?
 /// A simple selection for injecting a new tile along a line.
@@ -28,16 +34,29 @@ use std::fmt::Debug;
 pub struct AddTile<K = Line, B = AxisBounds>
 where
     K: QueryKey,
-    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
+    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned + Display,
 {
+    #[serde(bound(deserialize = "K: QueryKey"))]
     pub destination: K,
+
+    #[serde(bound(deserialize = "B: 'static"))]
     pub intended_bounds: B,
+}
+
+impl<K, B> Display for AddTile<K, B>
+where
+    K: QueryKey,
+    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned + Display,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AddTile({},{})", self.destination, self.intended_bounds)
+    }
 }
 
 impl<K, B> AddTile<K, B>
 where
     K: QueryKey,
-    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
+    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + Display + DeserializeOwned,
 {
     pub fn new(destination: K, bounds: B) -> Self {
         Self {
@@ -49,7 +68,7 @@ where
 
 impl<B> ElementInformation for Query<'_, AddTile<Line, B>>
 where
-    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
+    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + Display + DeserializeOwned,
 {
     fn kind(&self) -> ElementKind {
         self.to(self.destination).kind()
@@ -58,7 +77,7 @@ where
 
 impl<B> ElementInformation2D for Query<'_, AddTile<Line, B>>
 where
-    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
+    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + Display + DeserializeOwned,
 {
     fn bounds(&self) -> AreaBounds {
         self.to(self.destination).bounds().into()
@@ -67,43 +86,25 @@ where
 
 impl<B> TransformInformation for Query<'_, AddTile<Line, B>>
 where
-    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned,
+    B: 'static + Copy + Clone + Debug + Eq + PartialEq + Serialize + Display + DeserializeOwned,
 {
     fn surroundings(&self) -> Option<TransformSurroundings> {
         let destination = self.to(self.destination);
-        let surface_area =
-            Query::<Area>::from(Query::<NodeId>::from(destination.to_end(Negative)).to_surface());
-        let inward = surface_area
-            .with_side(*destination)
-            .to_segmented(!destination.side);
+        let mut maybe_neg = destination
+            .to_area(|iter| iter.last())
+            .map(|area| area.to_segmented(destination.side.axis));
 
         // we don't need to force the opposing line here
-        let maybe_outward = destination.to_opposing().map(|opposing_guide| {
-            surface_area
-                .with_side(*opposing_guide)
-                .to_segmented(destination.side)
-        });
+        let mut maybe_pos = destination
+            .to_opposing()
+            .and_then(|opposing_guide| opposing_guide.to_area(|iter| iter.last()))
+            .map(|area| area.to_segmented(destination.side.axis));
 
-        // the rest of this is just normalising the above backward/forward parts to collapse intermediate Nones and arranged them in natural order
-        if let Some(outward_fragment) = maybe_outward {
-            if destination.side.sign == Positive {
-                Some(TransformSurroundings::Bidirectional(
-                    inward,
-                    outward_fragment,
-                ))
-            } else {
-                Some(TransformSurroundings::Bidirectional(
-                    outward_fragment,
-                    inward,
-                ))
-            }
-        } else {
-            if destination.side.sign == Positive {
-                Some(TransformSurroundings::Negative(inward))
-            } else {
-                Some(TransformSurroundings::Positive(inward))
-            }
+        if self.destination.side.sign == Positive {
+            std::mem::swap(&mut maybe_neg, &mut maybe_pos);
         }
+
+        TransformSurroundings::new(maybe_neg, maybe_pos)
     }
 }
 
@@ -114,70 +115,58 @@ impl Standardisation for Query<'_, AddTile> {
         if !destination.is_connected() {
             Err(TransformError::NotConnected)?
         }
-        let surface_area =
-            Query::<Area>::from(Query::<NodeId>::from(destination.to_end(Negative)).to_surface());
-
         if self.kind() == ElementKind::Surface && destination.peek(!destination.side.sign).is_some()
         {
-            Err(TransformError::IncompatibleSurroundings)?
+            Err(TransformError::InvalidTarget)?
         }
 
         for sign in [Negative, Positive] {
-            let surface_side =
-                surface_area.to_line(Cardinal::new(self.destination.side.axis, sign));
-            let opp = if sign == destination.side.sign {
+            let start = if sign != destination.side.sign {
                 Some(destination)
             } else {
-                destination.to_opposing().or_else(|| {
-                    if surface_side
-                        .peek(!sign)
-                        .is_some_and(|neighbour| neighbour == self.destination)
-                    {
-                        Some(surface_side)
-                    } else {
-                        None
-                    }
-                })
+                let res = destination
+                    .to_opposing()
+                    .or_else(|| destination.to_sentinel());
+
+                println!(
+                    "{:?}, {:?}, {:?}",
+                    destination.to_opposing().map(|l| *l),
+                    destination.to_sentinel().map(|l| *l),
+                    res.map(|l| *l)
+                );
+                res
             };
-            if let Some(start) = opp {
+            if let Some(start) = start {
                 match start.kind() {
                     ElementKind::Surface => {
-                        if self.intended_bounds[sign] != surface_side.bounds().side_location {
+                        if self.intended_bounds[destination.side.sign]
+                            != start.bounds().side_location
+                        {
                             Err(TransformError::IncompatibleSurroundings)?
                         }
                     }
                     ElementKind::Tile => {
-                        if let Some(end) = start.to_iter(sign).last() {
-                            debug_assert_eq!(end.side, !start.side);
+                        if let Some(end) = start.to_iter(!sign).inclusive().last() {
+                            // debug_assert_eq!(end.side, !start.side);
                             let end_location = end.bounds().side_location;
                             match sign {
-                                Negative if self.intended_bounds[sign] >= end_location => {}
-                                Positive if self.intended_bounds[sign] <= end_location => {}
-                                _ => Err(TransformError::IncompatibleSurroundings)?,
+                                Negative if self.intended_bounds[sign] <= end_location => {}
+                                Positive if self.intended_bounds[sign] >= end_location => {}
+                                _ => Err(TransformError::InsufficientSpace)?,
                             }
                         } else {
                             Err(TransformError::IncompatibleSurroundings)?
                         }
                     }
                     _ => {
-                        panic!("Invalid program state: a mixed line cannot possibly be connected.")
+                        println!("{}", start.kind());
+                        panic!(
+                            "Invalid program state: a mixed line should not have arisen from internal logic."
+                        )
                     }
                 }
             }
         }
-
-        // if let Some(details) = self.details() {
-        //     let available_bounds = self.to(details.area()).bounds()[self.destination.side.axis];
-        //     let alignment = available_bounds.alignment(&self.intended_bounds);
-        //     match alignment {
-        //         BoundsAlignment::Contains | BoundsAlignment::Parallel if destination.kind() == ElementKind::Tile => {},
-        //         BoundsAlignment::Parallel if destination.kind() == ElementKind::Surface &&  => ,
-        //         _ => Err(TransformError::InsufficientSpace)?,
-        //     }
-        // } else {
-        //     Err(TransformError::IncompatibleSurroundings)?
-        // }
-
         Ok(self)
     }
 
@@ -187,9 +176,7 @@ impl Standardisation for Query<'_, AddTile> {
             && let Some(tile_line) = destination.peek(!destination.side.sign)
         {
             self.destination = tile_line;
-        }
-
-        if let Some(opposable) = destination.to_opposable() {
+        } else if let Some(opposable) = destination.to_opposable() {
             self.destination = *opposable;
         }
 
@@ -201,7 +188,7 @@ impl<K> QueryContext<AddTile<K>> for Graph
 where
     K: QueryKey,
     Self: QueryContext<K>,
-    for<'a> Query<'a, <Self as QueryContext<K>>::OutKey>: Into<Query<'a, Line>>
+    for<'a> Query<'a, <Self as QueryContext<K>>::OutKey>: Into<Query<'a, Line>>,
 {
     type OutKey = AddTile;
 
@@ -213,11 +200,9 @@ where
     ) -> Result<Query<'_, Self::OutKey>, KeyedError<AddTile<K>, Self::ErrorDetail>> {
         (|| {
             let line: Line = *Into::<Query<Line>>::into(self.resolve(key.destination)?);
-            Ok(
-                Query::new(self, AddTile::new(line, key.intended_bounds))
-                    .to_normalized()
-                    .to_validated()?,
-            )
+            Ok(Query::new(self, AddTile::new(line, key.intended_bounds))
+                .to_normalized()
+                .to_validated()?)
         })()
         .with_context(|_| KeyedSnafu { key })
     }
@@ -229,25 +214,46 @@ impl RawCommandExecutor<AddTile> for Graph {
     fn execute(&mut self, command: AddTile) -> Self::Response {
         let id = NodeId::new();
         let surface_id = *Query::new(self, command.destination[Negative]).to_surface();
+        let destination = Query::new(self, command.destination);
+        let original_opposing = destination
+            .to_opposing()
+            .or_else(|| destination.to_sentinel())
+            .map(|query| *query);
         let initial_bounds = Query::new(self, command).bounds();
         // move most of this into transform's execution
+        self.containing_surfaces.insert(id, surface_id);
         self.tile_neighbourhoods
             .insert(id, crate::graph::NeighbourhoodGroup::new());
-        self.containing_surfaces.insert(id, surface_id);
         self.bounds.insert(id, initial_bounds);
 
-        self.replace_connections(
-            command.destination,
-            Line::new(id, id, !command.destination.side),
-        );
-        if let Some(opposing) = Query::new(self, command.destination)
-            .to_opposing()
-            .map(|query| *query)
+        if command.destination[Negative] == surface_id
+            && [NORTH, SOUTH, EAST, WEST].iter().all(|dir| {
+                Query::new(self, NeighbourTiles(Caret::new(surface_id, *dir)))
+                    .into_iter()
+                    .next()
+                    .is_none()
+            })
         {
-            self.replace_connections(opposing, Line::new(id, id, command.destination.side));
+            for dir in [NORTH, SOUTH, EAST, WEST] {
+                self.replace_connections(
+                    Caret::new(surface_id, dir).into(),
+                    Caret::new(id, dir).into(),
+                )
+            }
+        } else {
+            println!("{:?}", original_opposing);
+            self.replace_connections(
+                command.destination,
+                Line::new(id, id, !command.destination.side),
+            );
+            if let Some(opposing) = original_opposing {
+                self.replace_connections(opposing, Line::new(id, id, command.destination.side));
+            }
         }
 
-        self.execute(TransformArea::new(
+        println!("{}", serde_json::to_string_pretty(&self).unwrap());
+
+        self.execute(Transform::new(
             Area::from(id),
             command.destination.side.axis,
             command.intended_bounds,

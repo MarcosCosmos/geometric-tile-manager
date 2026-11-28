@@ -5,41 +5,50 @@ use crate::error::{KeyedError, KeyedSnafu, QueryError, ValidationError};
 use crate::geometry::Axis::{Horizontal, Vertical};
 use crate::geometry::Sign::{Negative, Positive};
 use crate::geometry::{
-    AreaBounds, AxisBounds, Cardinal, Diagonal, EAST, NORTH, NORTH_EAST, NORTH_WEST, SOUTH,
+    AreaBounds, Axis, AxisBounds, Cardinal, Diagonal, EAST, NORTH, NORTH_EAST, NORTH_WEST, SOUTH,
     SOUTH_EAST, SOUTH_WEST, WEST,
 };
 use crate::graph::{Graph, NodeId};
 use crate::iter::IterativeQueryNavigation;
-use crate::key::{QueryKey, query_impl};
+use crate::key::{NodeKey, QueryKey, query_impl};
 use crate::line::{Line, LineQuery};
 use crate::node::NodeQuery;
-use crate::query::{ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GraphQuery, GroupInformation, Query, Standardisation};
-use geotm_macros::{QueryKey, ValidationError};
+use crate::query::ElementKind::Surface;
+use crate::query::{
+    ElementInformation, ElementInformation1D, ElementInformation2D, ElementKind, GraphQuery,
+    GroupInformation, Query, Standardisation,
+};
+use geotm_macros::{Encode, QueryKey, ValidationError};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Index, IndexMut};
 
 /// Generally dividers will be clean lines that don't intersect any tiles,
 /// but the start or end may or may not result in cutting through some tiles
 /// Note: it is possible for a transform container to start and end with the same pair of ids and have no dividers.
 ///     in this case it is a single row/column or even single tile.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
+#[derive(Copy, Clone, Eq, PartialEq, Serialize, Deserialize, QueryKey, Encode)]
+#[encode("[{}..{}..{}..{}]")]
 pub struct Area<Node = NodeId>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
+    #[serde(bound(deserialize = "Node: NodeKey"))]
     north_west: Node,
+    #[serde(bound(deserialize = "Node: NodeKey"))]
     north_east: Node,
+    #[serde(bound(deserialize = "Node: NodeKey"))]
     south_west: Node,
+    #[serde(bound(deserialize = "Node: NodeKey"))]
     south_east: Node,
 }
 
 impl<Node> From<Node> for Area<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     fn from(value: Node) -> Self {
         Area {
@@ -55,7 +64,7 @@ query_impl! { From<NodeId> for Area }
 
 impl<Node> Area<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     pub fn new(north_west: Node, north_east: Node, south_west: Node, south_east: Node) -> Self {
         Self {
@@ -69,7 +78,7 @@ where
 
 impl<Node> Index<Diagonal> for Area<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     type Output = Node;
 
@@ -97,7 +106,7 @@ where
 
 impl<Node> IndexMut<Diagonal> for Area<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     fn index_mut(&mut self, index: Diagonal) -> &mut Self::Output {
         match index {
@@ -121,17 +130,15 @@ where
     }
 }
 
-pub trait AreaQuery: ElementInformation2D {
-    type LineQuery: LineQuery;
-    type NodeQuery: NodeQuery;
-    fn to_line(self, side: Cardinal) -> Self::LineQuery;
-    fn to_corner(self, corner: Diagonal) -> Self::NodeQuery;
+pub trait AreaQuery: GraphQuery + ElementInformation2D {
+    fn to_side(self, side: Cardinal) -> Self::Query<Line>;
+    fn to_corner(self, corner: Diagonal) -> Self::Query<NodeId>;
 
-    fn to_segmented(self, start_side: Cardinal) -> SegmentedArea {
-        SegmentedArea::new(self.to_segments(start_side).collect(), start_side.axis)
+    fn to_segmented(self, axis: Axis) -> SegmentedArea {
+        SegmentedArea::new(self.to_segments(axis).collect(), axis)
     }
 
-    fn to_segments(self, start_side: Cardinal) -> impl Iterator<Item = Area>;
+    fn to_segments(self, axis: Axis) -> impl Iterator<Item = Area>;
     /// Constrain an area by updating one of its sides with a line.
     /// Useful for constraining selection areas e.g. delete selections cannot include the deleted tile, and generally need to start from a given line.
     /// Note: the resulting area may become invalid. If not pre-asserted, check with into_validated!
@@ -161,12 +168,12 @@ impl ElementInformation2D for Query<'_, Area> {
     fn bounds(&self) -> AreaBounds {
         AreaBounds::new(
             AxisBounds::new(
-                self.to_line(WEST).bounds().side_location,
-                self.to_line(EAST).bounds().side_location,
+                self.to_side(WEST).bounds().side_location,
+                self.to_side(EAST).bounds().side_location,
             ),
             AxisBounds::new(
-                self.to_line(NORTH).bounds().side_location,
-                self.to_line(SOUTH).bounds().side_location,
+                self.to_side(NORTH).bounds().side_location,
+                self.to_side(SOUTH).bounds().side_location,
             ),
         )
     }
@@ -174,10 +181,10 @@ impl ElementInformation2D for Query<'_, Area> {
 
 impl<'a> GroupInformation for Query<'a, Area> {
     fn is_connected(&self) -> bool {
-        self.to_line(NORTH).is_connected()
-            && self.to_line(EAST).is_connected()
-            && self.to_line(SOUTH).is_connected()
-            && self.to_line(WEST).is_connected()
+        self.to_side(NORTH).is_connected()
+            && self.to_side(EAST).is_connected()
+            && self.to_side(SOUTH).is_connected()
+            && self.to_side(WEST).is_connected()
     }
 }
 
@@ -190,11 +197,7 @@ pub enum AreaError {
 }
 
 impl<'a> AreaQuery for Query<'a, Area> {
-    type LineQuery = Query<'a, Line>;
-
-    type NodeQuery = Query<'a, NodeId>;
-
-    fn to_line(self, side: Cardinal) -> Self::LineQuery {
+    fn to_side(self, side: Cardinal) -> Self::Query<Line> {
         self.to(match side {
             Cardinal {
                 axis: Horizontal,
@@ -215,7 +218,7 @@ impl<'a> AreaQuery for Query<'a, Area> {
         })
     }
 
-    fn to_corner(self, corner: Diagonal) -> Self::NodeQuery {
+    fn to_corner(self, corner: Diagonal) -> Self::Query<NodeId> {
         self.to(self[corner])
     }
 
@@ -256,8 +259,11 @@ impl<'a> AreaQuery for Query<'a, Area> {
         self
     }
 
-    fn to_segments(self, start_side: Cardinal) -> impl Iterator<Item = Self::Target> {
-        let end_location = self.to_line(!start_side).bounds().side_location;
+    fn to_segments(self, axis: Axis) -> impl Iterator<Item = Self::Target> {
+        debug_assert!(self.is_connected());
+
+        let start_side = Cardinal::new(axis, Negative);
+        let end_location = self.to_side(!start_side).bounds().side_location;
 
         let terminal_ordering = match start_side.sign {
             Negative => Ordering::Greater,
@@ -265,9 +271,9 @@ impl<'a> AreaQuery for Query<'a, Area> {
         };
 
         let mut iter = self
-            .to_line(start_side)
+            .to_side(start_side)
             .to_iter(!start_side.sign)
-            .include_if(|line| line.kind() == ElementKind::Tile)
+            .inclusive()
             .take_while(move |line| {
                 line.to_end(Negative)
                     .bounds()
@@ -281,40 +287,17 @@ impl<'a> AreaQuery for Query<'a, Area> {
                         .cmp(&end_location)
                         != terminal_ordering
             });
+
         std::iter::from_fn(move || {
             if let (Some(each_start), Some(each_end)) = (iter.next(), iter.next()) {
-                Some(match start_side {
-                    Cardinal {
-                        axis: Horizontal,
-                        sign: Negative,
-                    } => Area {
+                Some(match axis {
+                    Horizontal => Area {
                         north_west: each_start[Negative],
                         north_east: each_end[Negative],
                         south_east: each_end[Positive],
                         south_west: each_start[Positive],
                     },
-                    Cardinal {
-                        axis: Horizontal,
-                        sign: Positive,
-                    } => Area {
-                        north_west: each_end[Negative],
-                        north_east: each_start[Negative],
-                        south_east: each_start[Positive],
-                        south_west: each_end[Positive],
-                    },
-                    Cardinal {
-                        axis: Vertical,
-                        sign: Positive,
-                    } => Area {
-                        north_west: each_end[Negative],
-                        north_east: each_end[Positive],
-                        south_west: each_start[Negative],
-                        south_east: each_start[Positive],
-                    },
-                    Cardinal {
-                        axis: Vertical,
-                        sign: Negative,
-                    } => Area {
+                    Vertical => Area {
                         north_west: each_start[Negative],
                         north_east: each_start[Positive],
                         south_west: each_end[Negative],
@@ -343,7 +326,7 @@ impl Standardisation for Query<'_, Area> {
         } else {
             let bad_sides: Vec<Cardinal> = [WEST, NORTH, EAST, SOUTH]
                 .into_iter()
-                .filter(|&side| self.to_line(side).to_validated().is_err())
+                .filter(|&side| self.to_side(side).to_validated().is_err())
                 .collect();
             if !bad_sides.is_empty() {
                 Err(AreaError::WrongOrder { bad_sides })
@@ -357,7 +340,7 @@ impl Standardisation for Query<'_, Area> {
 impl<Node> QueryContext<Area<Node>> for Graph
 where
     Self: QueryContext<Node, OutKey = NodeId>,
-    Node: QueryKey,
+    Node: NodeKey,
 {
     type OutKey = Area;
 

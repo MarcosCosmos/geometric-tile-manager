@@ -1,4 +1,4 @@
-extern crate core;
+#![feature(ascii_char_variants)]
 
 pub mod area;
 pub mod caret;

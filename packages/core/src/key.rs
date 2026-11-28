@@ -1,21 +1,17 @@
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use uuid::Uuid;
 
 pub trait QueryKey:
-    Sized + Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned + 'static
+    Sized + Copy + Clone + Debug + Display + Eq + PartialEq + Serialize + DeserializeOwned + 'static
 {
-    // type NodeKey: NodeKey;
 }
 
-// impl NodeKey for Uuid {}
+impl NodeKey for Uuid {}
 
-impl QueryKey for Uuid {
-    // type NodeKey = Self;
-}
-//
-// pub trait NodeKey: QueryKey {}
+impl QueryKey for Uuid {}
+pub trait NodeKey: QueryKey {}
 
 #[macro_export]
 macro_rules! query_impl {

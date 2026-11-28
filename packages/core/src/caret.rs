@@ -2,35 +2,40 @@ use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu};
 use crate::geometry::{Cardinal, LineBounds, Sign};
 use crate::graph::{Graph, NodeId};
-use crate::key::QueryKey;
+use crate::key::{NodeKey, QueryKey};
 use crate::line::Line;
 use crate::neighbours::{NeighbourSurfaces, NeighbourTiles, Neighbours};
-use crate::node::{NodeQuery, TooManyNodesError};
-use crate::query::{ElementInformation, ElementInformation1D, ElementKind, GraphQuery, Navigation, NavigationMut, Query};
+use crate::node::TooManyNodesError;
+use crate::query::{
+    ElementInformation, ElementInformation1D, ElementKind, GraphQuery, Navigation, NavigationMut,
+    Query,
+};
 use crate::query_impl;
-use geotm_macros::QueryKey;
+use geotm_macros::{Encode, QueryKey};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use std::cmp::Ordering;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::iter::Map;
 use std::ops::Deref;
 
 /// A caret is a position on the side of a node.
 /// they provide the step function for navigating along the gutter of carets parallel to them.
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, QueryKey)]
+#[derive(Copy, Clone, Eq, PartialEq, Serialize, Deserialize, QueryKey, Encode)]
+#[encode("{id}.{side}")]
 pub struct Caret<Node = NodeId>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
+    #[serde(bound(deserialize = "Node: NodeKey"))]
     pub id: Node,
     pub side: Cardinal,
 }
 
 impl<Node> Caret<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     pub fn new(id: Node, side: Cardinal) -> Self {
         Self { id, side }
@@ -54,7 +59,7 @@ where
 
 impl<Node> From<NeighbourTiles<Node>> for Caret<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     fn from(value: NeighbourTiles<Node>) -> Self {
         value.0
@@ -63,7 +68,7 @@ where
 
 impl<Node> From<NeighbourSurfaces<Node>> for Caret<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     fn from(value: NeighbourSurfaces<Node>) -> Self {
         value.0
@@ -72,7 +77,7 @@ where
 
 impl<Node> From<Neighbours<Node>> for Caret<Node>
 where
-    Node: QueryKey,
+    Node: NodeKey,
 {
     fn from(value: Neighbours<Node>) -> Self {
         match value {
@@ -84,9 +89,10 @@ where
 
 query_impl! { From<NeighbourTiles | NeighbourSurfaces | Neighbours> | TryFrom<Line> for Caret }
 
-pub trait CaretQuery: Deref<Target = Caret> {
-    type NodeQuery: NodeQuery;
-    fn to_node(self) -> Self::NodeQuery;
+pub trait CaretQuery:
+    GraphQuery + Deref<Target = Caret> + Navigation<Direction = Sign> + Ord
+{
+    fn to_node(self) -> Self::Query<NodeId>;
 }
 
 pub trait CaretNavigationMut: NavigationMut + Deref<Target = Caret> {
@@ -113,9 +119,7 @@ impl ElementInformation1D for Query<'_, Caret> {
 }
 
 impl<'a> CaretQuery for Query<'a, Caret> {
-    type NodeQuery = Query<'a, NodeId>;
-
-    fn to_node(self) -> Self::NodeQuery {
+    fn to_node(self) -> Self::Query<NodeId> {
         self.to(self.id)
     }
 }
@@ -126,6 +130,7 @@ impl Ord for Query<'_, Caret> {
     }
 }
 
+/// For `Caret` queries, navigation is amongst collinear carets.
 impl Navigation for Query<'_, Caret> {
     type Direction = Sign;
 
@@ -161,7 +166,7 @@ impl<T: ?Sized> CaretIterExt for T where T: Iterator<Item: Deref<Target = Caret>
 impl<Node> QueryContext<Caret<Node>> for Graph
 where
     Self: QueryContext<Node, OutKey = NodeId>,
-    Node: QueryKey,
+    Node: NodeKey,
 {
     type OutKey = Caret;
     type ErrorDetail = KeyedError<Node, <Self as QueryContext<Node>>::ErrorDetail>;
