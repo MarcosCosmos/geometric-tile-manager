@@ -88,6 +88,9 @@ impl<'a> NodeQuery for Query<'a, NodeId> {
             let mut neighbours = self.to(NeighbourTiles(*self.to_side(WEST))).into_iter();
             let neg = neighbours.next()?;
             let pos = neighbours.next_back().unwrap_or(neg);
+            let mut neighbours = self.to(NeighbourTiles(*self.to_side(WEST))).into_iter();
+            let neg = neighbours.next()?;
+            let pos = neighbours.next_back().unwrap_or(neg);
             self.to(Line::new(*neg, *pos, WEST))
                 .to_area(|iter| iter.last())
         } else {

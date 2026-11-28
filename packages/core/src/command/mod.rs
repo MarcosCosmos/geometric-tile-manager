@@ -10,7 +10,7 @@ use std::fmt::Debug;
 
 pub mod add_surface;
 pub mod add_tile;
-pub mod transform_area;
+pub mod transform;
 
 pub trait Command: Copy + Clone + Debug + Eq + PartialEq + Serialize + DeserializeOwned {}
 

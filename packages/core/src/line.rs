@@ -228,15 +228,17 @@ impl<'a> LineQuery for Query<'a, Line> {
 
     fn to_opposing(self) -> Option<Self> {
         let (cross_neg, cross_pos) = self.side.perpendicular_directions();
-        Some(self.to(Line::new(
-            self.to(Caret::new(self[Negative], cross_neg))
-                .to_next(self.side.sign)?
-                .id,
-            self.to(Caret::new(self[Positive], cross_pos))
-                .to_next(self.side.sign)?
-                .id,
-            self.side,
-        )))
+        Some(
+            self.to(Line::new(
+                self.to(Caret::new(self[Negative], cross_neg))
+                    .to_next(self.side.sign)?
+                    .id,
+                self.to(Caret::new(self[Positive], cross_pos))
+                    .to_next(self.side.sign)?
+                    .id,
+                self.side,
+            )),
+        )
     }
 
     fn to_sentinel(mut self) -> Option<Self> {

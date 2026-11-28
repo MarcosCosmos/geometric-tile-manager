@@ -1,5 +1,5 @@
 use crate::caret::Caret;
-use crate::command::transform_area::SegmentedArea;
+use crate::command::transform::SegmentedArea;
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu, QueryError, ValidationError};
 use crate::geometry::Axis::{Horizontal, Vertical};

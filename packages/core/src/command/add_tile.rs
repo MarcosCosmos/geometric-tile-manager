@@ -1,8 +1,8 @@
 use crate::area::{Area, AreaQuery};
 use crate::caret::Caret;
 use crate::command::add_surface::AddSurface;
-use crate::command::transform_area::TransformError;
-use crate::command::transform_area::{Transform, TransformInformation, TransformSurroundings};
+use crate::command::transform::TransformError;
+use crate::command::transform::{Transform, TransformInformation, TransformSurroundings};
 use crate::command::{Command, RawCommandExecutor};
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu, QueryError};
@@ -124,17 +124,9 @@ impl Standardisation for Query<'_, AddTile> {
             let start = if sign != destination.side.sign {
                 Some(destination)
             } else {
-                let res = destination
+                destination
                     .to_opposing()
-                    .or_else(|| destination.to_sentinel());
-
-                println!(
-                    "{:?}, {:?}, {:?}",
-                    destination.to_opposing().map(|l| *l),
-                    destination.to_sentinel().map(|l| *l),
-                    res.map(|l| *l)
-                );
-                res
+                    .or_else(|| destination.to_sentinel())
             };
             if let Some(start) = start {
                 match start.kind() {
@@ -159,7 +151,6 @@ impl Standardisation for Query<'_, AddTile> {
                         }
                     }
                     _ => {
-                        println!("{}", start.kind());
                         panic!(
                             "Invalid program state: a mixed line should not have arisen from internal logic."
                         )
@@ -173,9 +164,9 @@ impl Standardisation for Query<'_, AddTile> {
     fn to_normalized(mut self) -> Self {
         let destination = self.to(self.destination);
         if self.kind() == ElementKind::Surface
-            && let Some(tile_line) = destination.peek(!destination.side.sign)
+            && let Some(interior) = Query::<NodeId>::try_from(destination).ok().and_then(|surface| surface.to_interior())
         {
-            self.destination = tile_line;
+            self.destination = *interior.to_side(self.destination.side);
         } else if let Some(opposable) = destination.to_opposable() {
             self.destination = *opposable;
         }
@@ -241,7 +232,6 @@ impl RawCommandExecutor<AddTile> for Graph {
                 )
             }
         } else {
-            println!("{:?}", original_opposing);
             self.replace_connections(
                 command.destination,
                 Line::new(id, id, !command.destination.side),
@@ -249,9 +239,14 @@ impl RawCommandExecutor<AddTile> for Graph {
             if let Some(opposing) = original_opposing {
                 self.replace_connections(opposing, Line::new(id, id, command.destination.side));
             }
+            for sign in [Negative, Positive] {
+                self.update_connections(Line::new(
+                    command.destination[sign],
+                    id,
+                    Cardinal::new(!command.destination.side.axis, sign),
+                ));
+            }
         }
-
-        println!("{}", serde_json::to_string_pretty(&self).unwrap());
 
         self.execute(Transform::new(
             Area::from(id),

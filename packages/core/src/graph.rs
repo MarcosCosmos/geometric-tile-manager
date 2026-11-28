@@ -1,6 +1,6 @@
 use crate::area::{Area, AreaQuery};
 use crate::caret::Caret;
-use crate::command::transform_area::SegmentedArea;
+use crate::command::transform::SegmentedArea;
 use crate::context::QueryContext;
 use crate::error::{KeyedError, KeyedSnafu};
 use crate::geometry::{
@@ -320,7 +320,7 @@ impl Graph {
         };
 
         // sentinels are special and connect on the same side as where they are located.
-        let opposing_side = if target.kind() == ElementKind::Surface {
+        let opposing_side = if target.kind() == ElementKind::Surface  || opposites.iter().any(|node| Query::new(self, *node).kind() == ElementKind::Surface) {
             target.side
         } else {
             !target.side
@@ -328,9 +328,9 @@ impl Graph {
 
         let target = *target;
 
-        println!("og: {:?}", targets);
-        println!("op: {:?}", opposites);
-        println!("rep: {:?}", replacements);
+        // println!("targ: {:?}", targets);
+        // println!("op: {:?}", opposites);
+        // println!("rep: {:?}", replacements);
 
         for &target_caret in &targets {
             for &opposing_id in &opposites {
@@ -369,7 +369,8 @@ impl Graph {
 
     /// note: the replacements are attached to the scope, since it's possible that at this stage the scope has no opposites yet
     pub(crate) fn update_connections(&mut self, target: Line) {
-        let targets: Vec<_> = Query::new(self, target).into_iter().map(|c| *c).collect();
+        let target = Query::new(self, target);
+        let targets: Vec<_> = target.into_iter().map(|c| *c).collect();
 
         let opposites: Vec<_> = targets
             .iter()
@@ -380,13 +381,24 @@ impl Graph {
             })
             .collect();
 
-        println!("og: {:?}", targets);
+
+
+        println!("source: {:?}", *target);
+
+        println!("targ: {:?}", targets);
         println!("op: {:?}", opposites);
+
+        // sentinels are special and connect on the same side as where they are located.
+        let opposing_side = if target.kind() == ElementKind::Surface  || opposites.iter().any(|node| Query::new(self, *node).kind() == ElementKind::Surface) {
+            target.side
+        } else {
+            !target.side
+        };
 
         for target_caret in targets {
             let target_bounds = Query::new(self, target_caret).bounds().axis_bounds;
             for &opposing_id in &opposites {
-                let opposing_caret = Caret::new(opposing_id, !target.side);
+                let opposing_caret = Caret::new(opposing_id, opposing_side);
                 let opposing_bounds = Query::new(self, opposing_caret).bounds().axis_bounds;
                 match target_bounds.alignment(&opposing_bounds) {
                     BoundsAlignment::Before | BoundsAlignment::After => {

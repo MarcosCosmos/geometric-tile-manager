@@ -55,6 +55,8 @@ impl Playground {
                 intended_bounds: surface_bounds[Horizontal],
             })
             .unwrap();
+
+        println!("{:#?}", result.graph);
         result
             .graph
             .try_execute(AddTile {
@@ -62,6 +64,8 @@ impl Playground {
                 intended_bounds: AxisBounds::new(100, 450),
             })
             .unwrap();
+
+        println!("{:#?}", result.graph);
         // result
         //     .graph
         //     .try_execute(AddTile {
